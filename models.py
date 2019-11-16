@@ -1,32 +1,24 @@
 # https://github.com/dmlc/dgl/blob/master/examples/pytorch/dgmg/model.py
 
+NODE_ACT_DIM = 20
+NODE_HIDDEN_SIZE = 40
+EDGE_DIM = 60
 
 
 import torch.nn as nn
 import dgl
 from util import *
+
 class GraphDestructor(nn.Module):
     # returns the inverse order of nodes and edges by destruction order
-    def __init__(self, node_act_dim=NODE_ACT_DIM, node_hidden_size=NODE_HIDDEN_SIZE):
+    def __init__(self, node_act_dim=NODE_ACT_DIM, node_hidden_size=NODE_HIDDEN_SIZE, edge_dim=EDGE_DIM):
         super(GraphDestructor, self).__init__():
         self.graph_embed = GraphEmbed(node_hidden_size)
-        # rounds, node_dim, node_act_dim, edge_dim
-        self.graph_prop = GraphProp(num_prop_rounds, node_hidden_size, node_act_dim, g.number_of_edges())
+        self.graph_prop = GraphProp(num_prop_rounds, node_hidden_size, node_act_dim, edge_dim)
         self.choose_victim_agent = ChooseVictimAgent(self.graph_prop, node_hidden_size)
-    def forward_inference(self):
-        while self.g.number_of_nodes() > 1:
-            self.choose_victim_agent()
-        return self.g.nodes[0].data['hv']
-    def forward_train(self, order):
-        self.prepare_for_train()
-        i = 0
-        while self.g.number_of_nodes() > 1:
-            self.choose_victim_agent(a=actions[i])
-            i += 1
-        return self.get_log_prob()
     def get_log_prob(self):
         return torch.cat(self.choose_victim_agent.log_prob).sum()
-    def forward(self, victims=None):
+    def encode(self, victims=None):
         # The graph we will work on
         self.g = dgl.DGLGraph()
 
@@ -34,18 +26,20 @@ class GraphDestructor(nn.Module):
         # zero tensors will be set for those of new nodes and edges.
         self.g.set_n_initializer(dgl.frame.zero_initializer)
         self.g.set_e_initializer(dgl.frame.zero_initializer)
-
-        if self.training:
-            return self.forward_train(actions)
-        else:
-            return self.forward_inference()
+        victim_probs = []
+        victim_order = []
+        remaining_nodes = list(range(g.number_of_nodes()))
+        while self.g.number_of_nodes() > 1:
+            self.graph_prop(g)
+            victim_index, victim_prob = self.choose_victim_agent(g)
+            victim_order.append(remaining_nodes.pop(victim_index))
+        return self.g.nodes[0].data['hv'], victim_order, sum(victim_probs)
 
 class ChooseVictimAgent(nn.Module):
-    def __init__(self, graph_prop_func, node_hidden_size):
+    def __init__(self, node_hidden_size):
         super(ChooseVictimAgent, self).__init__()
 
-        self.graph_op = {'prop': graph_prop_func}
-        self.choose_death = nn.Linear(2 * node_hidden_size, 1)
+        self.choose_death = nn.Linear(node_hidden_size, 1)
 
     def _initialize_edge_repr(self, g, src_list, dest_list):
         # For untyped edges, we only add 1 to indicate its existence.
@@ -54,22 +48,18 @@ class ChooseVictimAgent(nn.Module):
         edge_repr = torch.ones(len(src_list), 1)
         g.edges[src_list, dest_list].data['he'] = edge_repr
 
-    def prepare_training(self):
-        self.log_prob = []
-
-    def forward(self, g, trueVictim):
+    def forward(self, g):
         node_embeddings = g.ndata
         print("node embedding shape", node_embeddings.shape)
         death_probs = self.choose_death(node_embeddings)
         death_probs = F.softmax(death_probs, dim=1)
+        dist = Categorical(death_probs)
 
-        if not self.training:
-            victim = Categorical(death_probs).sample().item()
-            g.remove_nodes(victim)
+        victim = dist.sample().item()
+        victim_prob = dist.log_prob(victim)
+        g.remove_nodes([victim])
+        return victim, victim_prob
 
-        if self.training:
-            if dests_probs.nelement() > 1:
-                self.log_prob.append(F.log_softmax(death_probs, dim=1)[:, trueVictim:trueVictim+1])
 '''
 Implementation adapted from https://docs.dgl.ai/en/latest/tutorials/models/3_generative_model/5_dgmg.html
 '''
