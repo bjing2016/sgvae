@@ -15,7 +15,7 @@ from functools import partial
 class GraphDestructor(nn.Module):
     # returns the inverse order of nodes and edges by destruction order
     def __init__(self, node_act_dim=NODE_ACT_DIM, node_hidden_size=NODE_HIDDEN_SIZE, edge_dim=EDGE_DIM):
-        super(GraphDestructor, self).__init__():
+        super(GraphDestructor, self).__init__()
         self.graph_embed = GraphEmbed(node_hidden_size)
         self.graph_prop = GraphProp(num_prop_rounds, node_hidden_size, node_act_dim, edge_dim)
         self.choose_victim_agent = ChooseVictimAgent(self.graph_prop, node_hidden_size)
@@ -232,7 +232,7 @@ class AddEdges(nn.Module):
         self.num_edge_types = num_edge_types
         self.graph_embed_func = graph_embed_func
         self.add_edge = nn.Linear(graph_embed_func.graph_dim + 2 * node_dim, num_edge_types+1) # index 0 being no edge
-
+        self.log_prob = []
 
         # Static edge types
 
