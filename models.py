@@ -1,6 +1,6 @@
 import torch.nn as nn
 import dgl
-
+from util import *
 class GraphDestructor(nn.Module):
     # returns the inverse order of nodes and edges by destruction order
     NotImplemented
@@ -75,4 +75,134 @@ class GraphConstructor(nn.Module):
             return self.forward_inference()
 
 class GraphEmbed(nn.Module):
+    def __init__(self, node_dim, graph_dim):
+        super(GraphEmbed, self).__init__()
+        self.graph_dim = graph_dim
+        self.node_gating = nn.Sequential(
+            nn.Linear(node_dim, 1),
+            nn.Sigmoid()
+        )
+        self.node_to_graph = nn.Linear(node_dim, graph_dim)
+
+    def forward(self, g):
+        if g.number_of_nodes == 0:
+            return torch.zeros(1, self.graph_dim)
+        nodes = g.ndata['hv'] # Check this
+        return (self.node_gating(nodes) * self.node_to_graph(nodes)).sum(0, keepdim=True)
+
+class GraphProp(nn.Module):
+    def __init__(self, rounds, node_dim, node_act_dim, edge_dim):
+        '''
+        Rounds: number of propogation steps
+        '''
+        super(GraphProp, self).__init__()
+        self.node_act_dim = node_act_dim
+        
+        # Each propogation step has same dims but different params
+        self.message_funcs = [] # Functions transformating a cocatenation of hu, hv, xuv to a vector
+        self.reduce_funcs = [] # Sums incoming messages to be activation
+        self.node_update_funcs = [] # GRU cell
+        for t in range(rounds):
+            self.message_funcs.append(nn.Linear(2 * node_dim + edge_dim, node_act_dim))
+            self.reduce_funcs.append(partial(self.dgmg_reduce, round=t))
+            self.node_update_funcs.append(nn.GRUCell(self.node_act_dim, node_dim))
+        
+        # Originally ModuleLists
+
+    def dgmg_msg(self, edges):
+        return {'m' : torch.cat([edges.src['hv'], edges.dest['hv'],
+                                    edges.data['he']], dim = 1)}
+
+    def dgmg_reduce(self, nodes, round):
+        hv_old = nodes.data['hv']
+        m = nodes.mailbox['m']
+        message = torch.cat([
+            hv_old.unsqueeze(1).expand(-1, m.size(1), -1), m], dim = 2)
+        node_activation = (self.message_funcs[round](message)).sum(1)
+
+        return {'a':node_activation}
     
+    def forward(self, g):
+        if g.number_of_edges() > 0:
+            for t in range(self.rounds):
+                g.update_all(message_func=self.gdmg_msg, #the message func field is just the gathering step
+                        reduce_func=self.reduce_funcs[t])
+                g.ndata['hv'] = self.node_update_funcs[t](
+                    g.ndata['a'], g.ndata['hv']
+                )
+
+class AddNode(nn.Module):
+    def __init__(self, graph_embed_func, node_dim, node_act_dim):
+        super(AddNode, self).__init__()
+
+        self.graph_embed_func = graph_embed_func
+        self.add_node = nn.Linear(graph_embed_func.graph_dim, 1)
+
+        self.node_init = nn.Linear(graph_embed_func.graph_dim, node_dim)
+
+        self.init_node_activation = torch.zeroes(1, node_act_dim) # To satisfy the GRU cell
+
+        self.log_prob = []
+
+    def initialize_node(self, g, graph_embed):
+        hv_init = self.node_init(graph_embed)
+        g.nodes[-1].data['hv'] = hv_init
+        g.nodes[-1].data['a'] = self.init_node_activation
+
+    def forward(self, g, action=None):
+        graph_embed = self.graph_embed_func(g)
+        logit = self.add_node(graph_embed)
+        prob = torch.sigmoid(logit)
+
+        if action == None:
+            action = Bernoulli(prob).sample().item()
+        if acction == 1: # not stop
+            g.add_nodes(1)
+            self.initialize_node(g, graph_embed)
+        
+        log_prob = bernoulli_action_log_prob(logit, action)
+        self.log_prob.append(log_prob)
+        
+        return action
+
+class AddEdge(nn.Module):
+    def __init__(self, graph_embed_func, node_dim, num_edge_types):
+        super(AddEdge, self).__init__()
+
+        self.graph_embed_func = graph_embed_func
+        self.add_edge = nn.Linear(graph_embed_func.graph_dim + node_dim, num_edge_types)
+        
+        self.log_prob = []
+
+        # Static edge types
+
+    def forward(self, g, action=None):
+        graph_embed = self.graph_embed_func(g)
+
+        src_embed = g.nodes[-1].data['hv']
+
+        logits = self.self.add_edge(torch.cat(
+            [graph_embed, src_embed], dim=1
+        ))
+        # Incomplete
+
+
+        
+        
+
+
+
+if __name__ == "__main__":
+    print('compiled without issue')
+
+    ## Notes
+    # DGLGraph object:
+    #   nodes(): tensor of nodes. Must be 0...N-1
+    #   edges(): tensor of src, tensor of dest
+    #   add_nodes(number of nodes to add)
+    #   add_edges(src list, dest list)
+    #   nodes[idx]: node object with dictionary .data, also accessible as tensor .ndata[key]
+    #   edges[src, dest].data similarly, also as .edges[[src list], [dest list]].data
+    #   g.edata is not intuitive sorted, so be careful
+    #   Careful when setting schemes
+    #   
