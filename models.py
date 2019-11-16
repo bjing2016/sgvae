@@ -67,73 +67,76 @@ class ChooseVictimAgent(nn.Module):
 Implementation adapted from https://docs.dgl.ai/en/latest/tutorials/models/3_generative_model/5_dgmg.html
 '''
 class GraphConstructor(nn.Module):
-    # TODO: 
-    def __init__(self, node_dim, graph_dim, act_dim, num_edge_types):
+    # TODO: node_embed -> edge types
+    def __init__(self, node_dim, graph_dim, msg_dim, num_edge_types, num_prop_rounds, num_node_types):
         super(GraphConstructor, self).__init__()
 
-    def build(self, seed):
-        stop = self.add_node_and_update()
+        self.graph_embed_func = GraphEmbed(node_dim, graph_dim)
+        self.node_adder = AddNode(self.graph_embed_func, node_dim, msg_dim)
+        self.edge_adder = AddEdges(self.graph_embed_func, node_dim, num_edge_types)
+        self.prop_func = GraphProp(num_prop_rounds, node_dim, msg_dim, num_edge_types)
+        self.num_node_types = num_node_types
+        self.node_type_extractor = nn.Linear(node_dim, num_node_types)
+    
+    def forward(self, z, pi=None, target=None):
+        '''
+        z: dims (1, node_embed_dim)
+        pi: [n_1, n_2...] order in which graph should be constructed.
+            Also serves as new (reconstructed) index -> original index lookup
+        returns DGLGraph with types in ndata['out'], NOT ndata['hv']
+        '''
+        g = dgl.DGLGraph()
 
-        while (not stop) and (self.g.number_of_nodes() < self.v_max + 1):
-            num_trials = 0
-            to_add_edge = self.add_edge_or_not()
-            while to_add_edge and (num_trials < g.number_of_nodes() - 1):
-                self.choose_dest_and_update()
-                num_trials += 1
-                to_add_edge = self.add_edge_or_not()
-            stop = self.add_node_and_update()
+        if target != None:
+            N = target.number_of_nodes()
+            assert(N == len(pi))
+            reverse_pi = [0]*N # old index -> new index lookup
+            for new, old in enumerate(pi):
+                reverse_pi[old] = new
+            edges = [[0]*N for _ in range(N)]
+            srcs, dsts = target.edges()
+            srcs, dsts = srcs.numpy(), dsts.numpy()
+            for (src, dst) in list(zip(srcs, dsts)):
+                newsrc = reverse_pi[src]
+                newdst = reverse_pi[dst]
+                assert(newsrc != newdst)
+                if newsrc < newdst:
+                    edges[newdst][newsrc] =  int(torch.argmax(target.edata[src, dst].data['he'].view(-1)) + 1
 
-        return self.g
+        g.ndata['hv'] = z
+        log_prob = []
+        num_nodes = 1
+        while True:
+            self.prop_func(g)
+            node_action = num_nodes < len(pi) if pi != None else None
+            node_added, log_prob_entry = self.node_adder(g, node_action)
+            log_prob.append(log_prob_entry)
+            if not node_added: break
+            num_nodes += 1
 
-    def add_node_and_update(self, a=None):
-        """Decide if to add a new node.
-        If a new node should be added, update the graph."""
-        return NotImplementedError
-
-    def add_edge_or_not(self, a=None):
-        """Decide if a new edge should be added."""
-        return NotImplementedError
-
-    def choose_dest_and_update(self, a=None):
-        """Choose destination and connect it to the latest node.
-        Add edges for both directions and update the graph."""
-        return NotImplementedError
-
-    def forward_train(self, actions):
-        """Forward at training time. It records the probability
-        of generating a ground truth graph following the actions."""
-        self.prepare_for_train()
-
-        stop = self.add_node_add_update(a=actions[sef.action_step])
-        while not stop:
-            to_add_edge = self.add_edge_or_not(a=actions[self.action_step])
-            while to_add_edge:
-                self.choose_dest_and_update(a=actions[self.action_step])
-            stop = self.add_node_and_update(a=actions[self.action_step])
-
-        return self.get_log_prob()
-
-    def forward_inference(self):
-        """Forward at inference time.
-        It generates graphs on the fly."""
-        return NotImplementedError
-
-    def forward(self, actions=None):
-        # The graph we will work on
-        self.g = dgl.DGLGraph()
-
-        # If there are some features for nodes and edges,
-        # zero tensors will be set for those of new nodes and edges.
-        self.g.set_n_initializer(dgl.frame.zero_initializer)
-        self.g.set_e_initializer(dgl.frame.zero_initializer)
-
-        if self.training:
-            return self.forward_train(actions=actions)
+            _, log_prob_entry = self.edge_adder(g, edge_action) # edge_added, log_prob
+            log_prob.append(log_prob_entry)
+        
+        type_logits = self.node_type_extractor(g.ndata['hv'])
+        if target == None:
+            types = Categorical(logits=type_logits).sample().item() # Tensor of indices
         else:
-            return self.forward_inference()
+            types = g.ndata['out'].argmax(dim=1)[pi] # Argmax for each node
+        out = torch.zeros(g.number_of_nodes(), self.num_node_types)
+        g.ndata['out'] = out.scatter_(types, 1)
+        node_type_log_prob = F.log_softmax(logits, dim=1).gather(1, types.long().view(-1, 1)).sum()
+        self.log_prob.append(node_type_log_prob)
+
+        return g, log_prob
+
+
 
 class GraphEmbed(nn.Module):
     def __init__(self, node_dim, graph_dim):
+        '''
+        node_dim: dimension of node embedding
+        graph_dim: dimension of graph embedding
+        '''
         super(GraphEmbed, self).__init__()
         self.graph_dim = graph_dim
         self.node_gating = nn.Sequential(
@@ -143,6 +146,9 @@ class GraphEmbed(nn.Module):
         self.node_to_graph = nn.Linear(node_dim, graph_dim)
 
     def forward(self, g):
+        '''
+        You should not actually ever call this module
+        '''
         if g.number_of_nodes == 0:
             return torch.zeros(1, self.graph_dim)
         nodes = g.ndata['hv'] # Check this
@@ -151,7 +157,9 @@ class GraphEmbed(nn.Module):
 class GraphProp(nn.Module):
     def __init__(self, rounds, node_dim, node_act_dim, edge_dim):
         '''
-        Rounds: number of propogation steps
+        rounds: number of propogation steps
+        node_dim: number of propogation steps
+        node_act_dim: message dimension
         '''
         super(GraphProp, self).__init__()
         self.node_act_dim = node_act_dim
@@ -162,17 +170,23 @@ class GraphProp(nn.Module):
         self.reduce_funcs = [] # Sums incoming messages to be activation
         self.node_update_funcs = [] # GRU cell
         for t in range(rounds):
-            self.message_funcs.append(nn.Linear(2 * node_dim + edge_dim, node_act_dim))
+            self.message_funcs.append(nn.Sequential(nn.Linear(2 * node_dim + edge_dim, node_act_dim), nn.ReLU()))
             self.reduce_funcs.append(partial(self.dgmg_reduce, round=t))
             self.node_update_funcs.append(nn.GRUCell(self.node_act_dim, node_dim))
 
         # Originally ModuleLists
 
     def dgmg_msg(self, edges):
+        '''
+        Forms messages from edge data
+        '''
         return {'m' : torch.cat([edges.src['hv'], edges.dst['hv'],
                                     edges.data['he']], dim = 1)}
 
     def dgmg_reduce(self, nodes, round):
+        '''
+        Reduces set of inbound messages to single vector
+        '''
         #hv_old = nodes.data['hv']
         m = nodes.mailbox['m']
         #message = torch.cat([
@@ -182,6 +196,9 @@ class GraphProp(nn.Module):
         return {'a':node_activation}
 
     def forward(self, g):
+        '''
+        Propogates
+        '''
         if g.number_of_edges() > 0:
             for t in range(self.rounds):
                 g.update_all(message_func=self.dgmg_msg, #the message func field is just the gathering step
@@ -192,41 +209,60 @@ class GraphProp(nn.Module):
 
 class AddNode(nn.Module):
     def __init__(self, graph_embed_func, node_dim, node_act_dim):
+        '''
+        graph_embed_func: func of type GraphEmbed module above
+        node_dim: node embedding dimension
+        node_act_dim: message dimension
+        '''
         super(AddNode, self).__init__()
 
         self.graph_embed_func = graph_embed_func
         self.add_node = nn.Linear(graph_embed_func.graph_dim, 1)
 
-        self.node_init = nn.Linear(graph_embed_func.graph_dim, node_dim)
+        self.node_init = nn.Sequential(nn.Linear(graph_embed_func.graph_dim, node_dim), nn.ReLU())
 
         self.init_node_activation = torch.zeros(1, node_act_dim) # To satisfy the GRU cell
 
         self.log_prob = []
 
     def initialize_node(self, g, graph_embed):
+        '''
+        Don't call this.
+        Initializes a new node based on the graph embedding.
+        '''
         hv_init = self.node_init(graph_embed)
         N = g.number_of_nodes()
         g.nodes[N-1].data['hv'] = hv_init
         g.nodes[N-1].data['a'] = self.init_node_activation
 
     def forward(self, g, action=None):
+        '''
+        If action==None, decides wheter or not to add a node.
+        Returns true/false, log_prob
+        action needs to be True (add node) or False (not add)
+        '''
         graph_embed = self.graph_embed_func(g)
         logit = self.add_node(graph_embed)
         prob = torch.sigmoid(logit)
 
         if action == None:
             action = Bernoulli(prob).sample().item()
-        if action == 1: # not stop
+        if action == bool(1): # not stop
             g.add_nodes(1)
             self.initialize_node(g, graph_embed)
 
         log_prob = bernoulli_action_log_prob(logit, action)
         self.log_prob.append(log_prob)
         
-        return bool(action)
+        return bool(action), log_prob
 
 class AddEdges(nn.Module):
     def __init__(self, graph_embed_func, node_dim, num_edge_types):
+        '''
+        graph_embed_func: module of type GraphEmbed above
+        node_dim: node embedding dimension
+        num_edge_types: length of one hot vector representing edge
+        '''
         super(AddEdges, self).__init__()
 
         self.num_edge_types = num_edge_types
@@ -237,6 +273,10 @@ class AddEdges(nn.Module):
         # Static edge types
 
     def forward(self, g, action=None):
+        '''
+        Actions needs to be list of length |current number of nodes - 1|
+        with value 0 if no edge is added and |edge type idx + 1| if an edge is added
+        '''
         N = g.number_of_nodes()
         graph_embed = self.graph_embed_func(g).repeat(N-1, 1)
         curr_embed = g.nodes[N-1].data['hv'].repeat(N-1, 1) # 1, node_dim
@@ -250,7 +290,7 @@ class AddEdges(nn.Module):
         #node_probs = torch.sigmoid(logits, dim=0)
         if action == None:
             actions = Categorical(logits=logits).sample().numpy().tolist()
-            print(actions)
+            #print(actions)
             
             for idx, etype in enumerate(actions):
                 if etype == 0: continue
@@ -259,54 +299,16 @@ class AddEdges(nn.Module):
                 
                 g.add_edges(N-1, idx)
                 g.add_edges(idx, N-1)
-                print('adding edge between', idx, N-1)
+                #print('adding edge between', idx, N-1)
                 g.edges[N-1, idx].data['he'] = e_em
-                print(idx, etype, e_em, g.edges[idx, N-1])
+                #print(idx, etype, e_em, g.edges[idx, N-1])
                 
                 g.edges[idx, N-1].data['he'] = e_em
         
         log_prob = F.log_softmax(logits, dim=1).gather(1, torch.tensor(actions).long().view(-1, 1)).sum()
         self.log_prob.append(log_prob)
-        return actions
+        return actions, log_prob
             
-                
-                
-        
-
-
-
-        
-
-
-        
-if __name__ == "__main__":
-    g = dgl.DGLGraph()
-    # add 34 nodes into the graph; nodes are labeled from 0~33
-    g.add_nodes(34)
-    # all 78 edges as a list of tuples
-    edge_list = [(1, 0), (2, 0), (2, 1), (3, 0), (3, 1), (3, 2),
-        (4, 0), (5, 0), (6, 0), (6, 4), (6, 5), (7, 0), (7, 1),
-        (7, 2), (7, 3), (8, 0), (8, 2), (9, 2), (10, 0), (10, 4),
-        (10, 5), (11, 0), (12, 0), (12, 3), (13, 0), (13, 1), (13, 2),
-        (13, 3), (16, 5), (16, 6), (17, 0), (17, 1), (19, 0), (19, 1),
-        (21, 0), (21, 1), (25, 23), (25, 24), (27, 2), (27, 23),
-        (27, 24), (28, 2), (29, 23), (29, 26), (30, 1), (30, 8),
-        (31, 0), (31, 24), (31, 25), (31, 28), (32, 2), (32, 8),
-        (32, 14), (32, 15), (32, 18), (32, 20), (32, 22), (32, 23),
-        (32, 29), (32, 30), (32, 31), (33, 8), (33, 9), (33, 13),
-        (33, 14), (33, 15), (33, 18), (33, 19), (33, 20), (33, 22),
-        (33, 23), (33, 26), (33, 27), (33, 28), (33, 29), (33, 30),
-        (33, 31), (33, 32)]
-    # add edges two lists of nodes: src and dst
-    src, dst = tuple(zip(*edge_list))
-    g.add_edges(src, dst)
-    # edges are directional in DGL; make them bi-directional
-    g.add_edges(dst, src)
-
-
-
-    print('compiled without issue')
-
     ## Notes
     # DGLGraph object:
     #   nodes(): tensor of nodes. Must be 0...N-1

@@ -1,6 +1,11 @@
 from models import *
 import torch
 
+# Limitations to note: one-hot edge and node labels
+#       All neural networls are only one layer
+#       Undirected (bidirectional) edges
+#       Edge types are initialized one hot and static
+
 if __name__ == "__main__":
     g = dgl.DGLGraph()
     # add 34 nodes into the graph; nodes are labeled from 0~33
@@ -44,10 +49,11 @@ if __name__ == "__main__":
         graph_prop(g)
 
         node_adder = AddNode(graph_embed_func, 5, 5)
-        added = node_adder(g)
-        if added:
-            edge_adder = AddEdges(graph_embed_func, 5, 1)
-            print(edge_adder(g))
+        added, prob = node_adder(g, action=True)
+        print('node',prob)
+        #if added:
+        edge_adder = AddEdges(graph_embed_func, 5, 1)
+        print(edge_adder(g)[1])
 
 
     print('compiled without issue')
