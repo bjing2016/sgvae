@@ -30,7 +30,7 @@ class SGVAE(nn.Module):
         # genGraph := Graph
         # log_px := scalar
         unldr = (log_px + log_pz - log_qzpi).detach() # unnormalized log-density ratio ?
-        loss = unldr * log_qzpi + lambda * log_px
+        loss = unldr * log_qzpi + Lambda * log_px
         return loss
 
 def __main__():
