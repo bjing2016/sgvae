@@ -1,12 +1,67 @@
+# https://github.com/dmlc/dgl/blob/master/examples/pytorch/dgmg/model.py
+
+NODE_ACT_DIM = 20
+NODE_HIDDEN_SIZE = 40
+EDGE_DIM = 60
+
+
 import torch.nn as nn
 import dgl
 import torch
 from torch.distributions import Bernoulli, Categorical
 from util import *
 from functools import partial
+
 class GraphDestructor(nn.Module):
     # returns the inverse order of nodes and edges by destruction order
-    NotImplemented
+    def __init__(self, node_act_dim=NODE_ACT_DIM, node_hidden_size=NODE_HIDDEN_SIZE, edge_dim=EDGE_DIM):
+        super(GraphDestructor, self).__init__():
+        self.graph_embed = GraphEmbed(node_hidden_size)
+        self.graph_prop = GraphProp(num_prop_rounds, node_hidden_size, node_act_dim, edge_dim)
+        self.choose_victim_agent = ChooseVictimAgent(self.graph_prop, node_hidden_size)
+    def get_log_prob(self):
+        return torch.cat(self.choose_victim_agent.log_prob).sum()
+    def encode(self, victims=None):
+        # The graph we will work on
+        self.g = dgl.DGLGraph()
+
+        # If there are some features for nodes and edges,
+        # zero tensors will be set for those of new nodes and edges.
+        self.g.set_n_initializer(dgl.frame.zero_initializer)
+        self.g.set_e_initializer(dgl.frame.zero_initializer)
+        victim_probs = []
+        victim_order = []
+        remaining_nodes = list(range(g.number_of_nodes()))
+        while self.g.number_of_nodes() > 1:
+            self.graph_prop(g)
+            victim_index, victim_prob = self.choose_victim_agent(g)
+            victim_order.append(remaining_nodes.pop(victim_index))
+        return self.g.nodes[0].data['hv'], victim_order, sum(victim_probs)
+
+class ChooseVictimAgent(nn.Module):
+    def __init__(self, node_hidden_size):
+        super(ChooseVictimAgent, self).__init__()
+
+        self.choose_death = nn.Linear(node_hidden_size, 1)
+
+    def _initialize_edge_repr(self, g, src_list, dest_list):
+        # For untyped edges, we only add 1 to indicate its existence.
+        # For multiple edge types, we can use a one hot representation
+        # or an embedding module.
+        edge_repr = torch.ones(len(src_list), 1)
+        g.edges[src_list, dest_list].data['he'] = edge_repr
+
+    def forward(self, g):
+        node_embeddings = g.ndata
+        print("node embedding shape", node_embeddings.shape)
+        death_probs = self.choose_death(node_embeddings)
+        death_probs = F.softmax(death_probs, dim=1)
+        dist = Categorical(death_probs)
+
+        victim = dist.sample().item()
+        victim_prob = dist.log_prob(victim)
+        g.remove_nodes([victim])
+        return victim, victim_prob
 
 '''
 Implementation adapted from https://docs.dgl.ai/en/latest/tutorials/models/3_generative_model/5_dgmg.html
@@ -27,8 +82,41 @@ class GraphConstructor(nn.Module):
                 num_trials += 1
                 to_add_edge = self.add_edge_or_not()
             stop = self.add_node_and_update()
-        
+
         return self.g
+
+    def add_node_and_update(self, a=None):
+        """Decide if to add a new node.
+        If a new node should be added, update the graph."""
+        return NotImplementedError
+
+    def add_edge_or_not(self, a=None):
+        """Decide if a new edge should be added."""
+        return NotImplementedError
+
+    def choose_dest_and_update(self, a=None):
+        """Choose destination and connect it to the latest node.
+        Add edges for both directions and update the graph."""
+        return NotImplementedError
+
+    def forward_train(self, actions):
+        """Forward at training time. It records the probability
+        of generating a ground truth graph following the actions."""
+        self.prepare_for_train()
+
+        stop = self.add_node_add_update(a=actions[sef.action_step])
+        while not stop:
+            to_add_edge = self.add_edge_or_not(a=actions[self.action_step])
+            while to_add_edge:
+                self.choose_dest_and_update(a=actions[self.action_step])
+            stop = self.add_node_and_update(a=actions[self.action_step])
+
+        return self.get_log_prob()
+
+    def forward_inference(self):
+        """Forward at inference time.
+        It generates graphs on the fly."""
+        return NotImplementedError
 
     def forward(self, actions=None):
         # The graph we will work on
@@ -77,7 +165,7 @@ class GraphProp(nn.Module):
             self.message_funcs.append(nn.Linear(2 * node_dim + edge_dim, node_act_dim))
             self.reduce_funcs.append(partial(self.dgmg_reduce, round=t))
             self.node_update_funcs.append(nn.GRUCell(self.node_act_dim, node_dim))
-        
+
         # Originally ModuleLists
 
     def dgmg_msg(self, edges):
@@ -92,7 +180,7 @@ class GraphProp(nn.Module):
         node_activation = (self.message_funcs[round](m)).sum(1)
 
         return {'a':node_activation}
-    
+
     def forward(self, g):
         if g.number_of_edges() > 0:
             for t in range(self.rounds):
@@ -131,7 +219,7 @@ class AddNode(nn.Module):
         if action == 1: # not stop
             g.add_nodes(1)
             self.initialize_node(g, graph_embed)
-        
+
         log_prob = bernoulli_action_log_prob(logit, action)
         self.log_prob.append(log_prob)
         
@@ -144,9 +232,7 @@ class AddEdges(nn.Module):
         self.num_edge_types = num_edge_types
         self.graph_embed_func = graph_embed_func
         self.add_edge = nn.Linear(graph_embed_func.graph_dim + 2 * node_dim, num_edge_types+1) # index 0 being no edge
-        #self.add_reverse_edge = nn.Linear(graph_embed_func.graph_dim + 2 * node_dim, num_edge_types+1) # index 0 being no edge
-        
-        self.log_prob = []
+
 
         # Static edge types
 
@@ -192,9 +278,6 @@ class AddEdges(nn.Module):
         
 
 
-        # Incomplete
-
-
         
 if __name__ == "__main__":
     g = dgl.DGLGraph()
@@ -234,4 +317,4 @@ if __name__ == "__main__":
     #   edges[src, dest].data similarly, also as .edges[[src list], [dest list]].data
     #   g.edata is not intuitive sorted, so be careful
     #   Careful when setting schemes
-    #   
+    #

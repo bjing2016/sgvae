@@ -13,7 +13,7 @@ from models import GraphDestructor
 class SGVAE(nn.Module):
     def __init__(self, z_dim, dims):
         super(SGVAE, self).__init__()
-        self.encoder = GraphDestructor(z_dim=z_dim, dims=dims) 
+        self.encoder = GraphDestructor(z_dim=z_dim, dims=dims)
         self.decoder = GraphConstructor(z_dim=z_dim, dims=dims)
         self.z_prior = (nn.Parameter(torch.zeros([z_dim]), requires_grad=False),
                         nn.Parameter(torch.ones([z_dim]), requires_grad=False))
