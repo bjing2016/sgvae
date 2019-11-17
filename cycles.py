@@ -1,3 +1,6 @@
+import sys
+import matplotlib.pyplot as plt
+import networkx as nx
 from cycle_dataset import CycleDataset
 import torch
 import torch.optim as optim
@@ -17,11 +20,11 @@ def train(num_epochs=200):
                     graph_dim=7,
                     num_node_types=2,
                     lamb=1)
-    train = CycleDataset('cycles/train.cycles')
-    val = CycleDataset('cycles/val.cycles')
+    trainData = CycleDataset('cycles/train.cycles')
+    valData = CycleDataset('cycles/val.cycles')
 
-    trainLoader = utils.DataLoader(train, batch_size=1, shuffle=True, num_workers=0,
-                             collate_fn=train.collate_single)
+    trainLoader = utils.DataLoader(trainData, batch_size=1, shuffle=True, num_workers=0,
+                             collate_fn=trainData.collate_single)
 
     optimizer = optim.SGD(sgvae.parameters(), lr=0.001, momentum=0.9)
 
@@ -38,7 +41,9 @@ def train(num_epochs=200):
             torch.save(sgvae.state_dict(), 'params/{}.params'.format(epoch))
         loss_sum = 0
         for g in tqdm(trainLoader, desc="[{}]".format(epoch)):
-            loss = sgvae.loss(g)
+            loss, genGraph = sgvae.loss(g, return_graph=True)
+            # nx.draw(genGraph.to_networkx())
+            # plt.show()
             loss_sum += loss
         loss_sum /= len(trainLoader)
         loss_sum.backward()
@@ -58,12 +63,20 @@ def eval(epoch):
     sgvae.load_state_dict(torch.load('params/{}.params'.format(epoch)))
     sgvae.eval()
 
-    graph = sgvae.generate
+    graph = sgvae.generate()
     print(graph)
+    nx.draw(graph.to_networkx())
+    plt.show()
 
 def main():
     if sys.argv[1] == 'train':
         train()
+    elif sys.argv[1] == 'vis':
+        trainData = CycleDataset('cycles/train.cycles')
+        for x in train:
+            break
+        nx.draw(x.to_networkx())
+        plt.show()
     else:
         eval(sys.argv[2])
 #

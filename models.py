@@ -31,7 +31,7 @@ class SGVAE(nn.Module):
         self.z_prior = (nn.Parameter(torch.zeros([node_dim]), requires_grad=False),
                         torch.diag(nn.Parameter(torch.ones([node_dim]), requires_grad=False)))
 
-    def loss(self, x):
+    def loss(self, x, return_graph=False):
         # note that nothing is batched !
         target = deepcopy(x)
         orig = deepcopy(x)
@@ -49,11 +49,14 @@ class SGVAE(nn.Module):
         # log_px := scalar
         unldr = (log_px + log_pz - log_qzpi).detach() # unnormalized log-density ratio ?
         loss = -unldr * log_qzpi + self.lamb * -log_px
-        return loss
+        if return_graph:
+            return loss, genGraph
+        else:
+            return loss
 
     def generate(self, numToGenerate=1):
-        z_dist = torch.distributions.distribution.MultivariateNormal(*self.z_prior)
-        graph = self.decoder(z_dist)
+        z_dist = torch.distributions.multivariate_normal.MultivariateNormal(*self.z_prior).sample([numToGenerate])
+        graph, _ = self.decoder(z_dist)
         return graph
 
 class GraphDestructor(nn.Module):
@@ -162,6 +165,8 @@ class GraphConstructor(nn.Module):
             #print('edge action', edge_action)
             _, log_prob_entry = self.edge_adder(g, edge_action) # edge_added, log_prob
             log_prob.append(log_prob_entry)
+            print(node_added)
+            print(num_nodes, log_prob_entry)
 
         type_logits = self.node_type_extractor(g.ndata['hv'])
         if target == None:
@@ -199,7 +204,7 @@ class GraphEmbed(nn.Module):
         if g.number_of_nodes == 0:
             return torch.zeros(1, self.graph_dim)
         nodes = g.ndata['hv'] # Check this
-        return (self.node_gating(nodes) * self.node_to_graph(nodes)).sum(0, keepdim=True)
+        return (self.node_gating(nodes) * self.node_to_graph(nodes)).mean(0, keepdim=True)
 
 class GraphProp(nn.Module):
     def __init__(self, rounds, node_dim, node_act_dim, edge_dim):
@@ -238,7 +243,7 @@ class GraphProp(nn.Module):
         m = nodes.mailbox['m']
         #message = torch.cat([
         #    hv_old.unsqueeze(1).expand(-1, m.size(1), -1), m], dim = 2)
-        node_activation = (self.message_funcs[round](m)).sum(1)
+        node_activation = (self.message_funcs[round](m)).mean(1)
 
         return {'a':node_activation}
 
