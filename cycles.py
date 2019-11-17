@@ -9,7 +9,7 @@ from models import *
 from tqdm import tqdm
 
 
-def train(num_epochs=50):
+def train(num_epochs=200):
     sgvae = SGVAE(rounds=2,
                     node_dim=5,
                     msg_dim=6,
@@ -34,6 +34,7 @@ def train(num_epochs=50):
         optimizer.zero_grad()
         print("Epoch", epoch)
         if epoch % 5 == 0 and epoch != 0:
+            print("Saving to {}.params".format(epoch))
             torch.save(sgvae.state_dict(), 'params/{}.params'.format(epoch))
         loss_sum = 0
         for g in tqdm(trainLoader, desc="[{}]".format(epoch)):
