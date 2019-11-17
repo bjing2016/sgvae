@@ -44,6 +44,8 @@ def train(num_epochs=200):
         loss_sum.backward()
         optimizer.step()
         print(loss_sum)
+    print("Saving to {}.params".format(epoch))
+    torch.save(sgvae.state_dict(), 'params/{}.params'.format(epoch))
 
 
 
