@@ -165,8 +165,8 @@ class GraphConstructor(nn.Module):
             #print('edge action', edge_action)
             _, log_prob_entry = self.edge_adder(g, edge_action) # edge_added, log_prob
             log_prob.append(log_prob_entry)
-            print(node_added)
-            print(num_nodes, log_prob_entry)
+            # print(node_added)
+            # print(num_nodes, log_prob_entry)
 
         type_logits = self.node_type_extractor(g.ndata['hv'])
         if target == None:
