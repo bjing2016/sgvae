@@ -44,10 +44,25 @@ def train(num_epochs=50):
         optimizer.step()
         print(loss_sum)
 
+def eval(epoch):
+    sgvae = SGVAE(rounds=2,
+                    node_dim=5,
+                    msg_dim=6,
+                    edge_dim=3,
+                    graph_dim=7,
+                    num_node_types=2,
+                    lamb=1)
+    sgvae.load_state_dict(torch.load('params/{}.params'.format(epoch)))
+    sgvae.eval()
 
+    graph = sgvae.generate
+    print(graph)
 
 def main():
-    train()
+    if sys.argv[1] == 'train':
+        train()
+    else:
+        eval(sys.argv[2])
 #
 # def is_valid(g):
 #     # Check if g is a cycle having 10-20 nodes.

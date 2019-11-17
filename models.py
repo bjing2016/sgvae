@@ -17,16 +17,16 @@ class SGVAE(nn.Module):
     def __init__(self, rounds, node_dim, msg_dim, edge_dim, graph_dim, num_node_types, lamb):
         super(SGVAE, self).__init__()
         self.lamb = lamb
-        self.encoder = GraphDestructor(rounds=rounds, 
-                                        node_dim=node_dim, 
-                                        msg_dim=msg_dim, 
+        self.encoder = GraphDestructor(rounds=rounds,
+                                        node_dim=node_dim,
+                                        msg_dim=msg_dim,
                                         edge_dim=edge_dim,
                                         num_node_types=num_node_types)
         self.decoder = GraphConstructor(node_dim=node_dim,
-                                        graph_dim=graph_dim, 
-                                        msg_dim=msg_dim, 
-                                        num_edge_types=edge_dim, 
-                                        num_prop_rounds=rounds, 
+                                        graph_dim=graph_dim,
+                                        msg_dim=msg_dim,
+                                        num_edge_types=edge_dim,
+                                        num_prop_rounds=rounds,
                                         num_node_types=num_node_types)
         self.z_prior = (nn.Parameter(torch.zeros([node_dim]), requires_grad=False),
                         torch.diag(nn.Parameter(torch.ones([node_dim]), requires_grad=False)))
@@ -50,6 +50,11 @@ class SGVAE(nn.Module):
         unldr = (log_px + log_pz - log_qzpi).detach() # unnormalized log-density ratio ?
         loss = -unldr * log_qzpi + self.lamb * -log_px
         return loss
+
+    def generate(self, numToGenerate=1):
+        z_dist = torch.distributions.distribution.MultivariateNormal(*self.z_prior)
+        graph = self.decoder(z_dist)
+        return graph
 
 class GraphDestructor(nn.Module):
     # returns the inverse order of nodes and edges by destruction order
@@ -115,7 +120,7 @@ class GraphConstructor(nn.Module):
         self.prop_func = GraphProp(num_prop_rounds, node_dim, msg_dim, num_edge_types)
         self.num_node_types = num_node_types
         self.node_type_extractor = nn.Linear(node_dim, num_node_types)
-    
+
     def forward(self, z, pi=None, target=None):
         '''
         z: dims (1, node_embed_dim)
@@ -157,7 +162,7 @@ class GraphConstructor(nn.Module):
             #print('edge action', edge_action)
             _, log_prob_entry = self.edge_adder(g, edge_action) # edge_added, log_prob
             log_prob.append(log_prob_entry)
-        
+
         type_logits = self.node_type_extractor(g.ndata['hv'])
         if target == None:
             types = Categorical(logits=type_logits).sample() # Tensor of indices
@@ -206,7 +211,7 @@ class GraphProp(nn.Module):
         super(GraphProp, self).__init__()
         self.node_act_dim = node_act_dim
         self.rounds = rounds
-        
+
         # Each propogation step has same dims but different params
         self.message_funcs = [] # Functions transformating a cocatenation of hu, hv, xuv to a vector
         self.reduce_funcs = [] # Sums incoming messages to be activation
@@ -295,7 +300,7 @@ class AddNode(nn.Module):
 
         log_prob = bernoulli_action_log_prob(logit, action)
         self.log_prob.append(log_prob)
-        
+
         return bool(action), log_prob
 
 class AddEdges(nn.Module):
@@ -337,19 +342,19 @@ class AddEdges(nn.Module):
             if etype == 0: continue
             e_em = torch.zeros(1, self.num_edge_types)
             e_em[0,etype-1] = 1.0
-            
+
             g.add_edges(N-1, idx)
             g.add_edges(idx, N-1)
             #print('adding edge between', idx, N-1)
             g.edges[N-1, idx].data['he'] = e_em
             #print(idx, etype, e_em, g.edges[idx, N-1])
-            
+
             g.edges[idx, N-1].data['he'] = e_em
-    
+
         log_prob = F.log_softmax(logits, dim=1).gather(1, torch.tensor(actions).long().view(-1, 1)).sum()
         self.log_prob.append(log_prob)
         return actions, log_prob
-            
+
     ## Notes
     # DGLGraph object:
     #   nodes(): tensor of nodes. Must be 0...N-1
