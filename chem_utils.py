@@ -791,9 +791,9 @@ class MoleculeDataset(object):
         dataset_prefix = self._dataset_prefix()
 
 
-        train_smiles = load_smiles_from_file("smiles/ChEMBL_DGMG_train.txt")
+        train_smiles = load_smiles_from_file("smiles/small_train.txt")
         self.train_set = self._create_a_subset(train_smiles)
-        val_smiles = load_smiles_from_file("smiles/ChEMBL_DGMG_val.txt")
+        val_smiles = load_smiles_from_file("smiles/small_val.txt")
         self.val_set = self._create_a_subset(val_smiles)
 
     def _dataset_prefix(self):

@@ -10,21 +10,21 @@ if __name__ == "__main__":
 
     sgvae = SGVAE(rounds=2,
                     node_dim=5,
-                    msg_dim=6, 
-                    edge_dim=3, 
+                    msg_dim=6,
+                    edge_dim=3,
                     graph_dim=7,
                     num_node_types=2,
                     lamb=1)
-    
-    
-    
-    
-    constructor = GraphConstructor(node_dim=5, graph_dim=7, msg_dim=6, 
+
+
+
+
+    constructor = GraphConstructor(node_dim=5, graph_dim=7, msg_dim=6,
                         num_edge_types=3, num_prop_rounds=5, num_node_types=2)
 
     g = dgl.DGLGraph()
     # add 34 nodes into the graph; nodes are labeled from 0~33
-    
+
     g.add_nodes(4)
     g.ndata['out'] = torch.tensor([
         [0, 1], [0,1], [0,1], [0,1]
@@ -35,7 +35,7 @@ if __name__ == "__main__":
     g.edges[2,1].data['he'] = torch.tensor([[1,0,0]]).float()
 
     optimizer = optim.SGD(sgvae.parameters(), lr=0.001, momentum=0.9)
-        
+
     for i in range(100):
         optimizer.zero_grad()
 
@@ -74,8 +74,8 @@ if __name__ == "__main__":
     '''
     #for (src, dest) in edge_list:
     #    g.edges[src, dest].data['he'] = torch.ones(1,1)
-    
-    g.ndata['hv'] = torch.randn(1, 5)   
+
+    g.ndata['hv'] = torch.randn(1, 5)
 
     graph_embed_func = GraphEmbed(5, 10)
     print(graph_embed_func(g))
