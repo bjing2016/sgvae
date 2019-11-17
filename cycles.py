@@ -13,6 +13,7 @@ from tqdm import tqdm
 
 
 def train(num_epochs=200):
+    num_epochs = int(num_epochs)
     sgvae = SGVAE(rounds=2,
                     node_dim=5,
                     msg_dim=6,
@@ -70,7 +71,7 @@ def eval(epoch):
 
 def main():
     if sys.argv[1] == 'train':
-        train()
+        train(*sys.argv[2:])
     elif sys.argv[1] == 'vis':
         trainData = CycleDataset('cycles/train.cycles')
         for x in train:
