@@ -36,6 +36,7 @@ class SGVAE(nn.Module):
         target = deepcopy(x)
         orig = deepcopy(x)
         z, pi, log_qzpi = self.encoder(orig)
+        # print("z, l", z, log_qzpi)
         #print(pi)
         # z     := vector of dimension z_dim
         # pi    := vector of [[idx] + [order]]
@@ -47,8 +48,18 @@ class SGVAE(nn.Module):
         genGraph, log_px = self.decoder(z, pi=pi, target=target)
         # genGraph := Graph
         # log_px := scalar
-        unldr = (log_px + log_pz - log_qzpi).detach() # unnormalized log-density ratio ?
-        loss = -unldr * log_qzpi + self.lamb * -log_px
+
+        unldr = (log_px.detach() + log_pz.detach() - log_qzpi) # unnormalized log-density ratio ?
+        loss = -unldr + log_qzpi * -unldr.detach() + self.lamb * -log_px
+
+        # unldr = unldr.detach()
+        # loss = unldr - 1/()
+
+        # print("loss:", loss)
+        # print("unldr:", unldr)
+        # print("log_qzpi:", log_qzpi)
+        # print("log_pz:", log_pz)
+        # print("log_px:", log_px)
         if return_graph:
             return loss, genGraph
         else:
@@ -81,7 +92,9 @@ class GraphDestructor(nn.Module):
             self.graph_prop(g)
             victim_index, victim_prob = self.choose_victim_agent(g)
             victim_order.append(remaining_nodes.pop(victim_index))
+            victim_probs.append(victim_prob)
         victim_order.append(remaining_nodes[0])
+        # print("vp sum", sum(victim_probs))
         return g.nodes[0].data['hv'], victim_order[::-1], sum(victim_probs)
 
 class ChooseVictimAgent(nn.Module):

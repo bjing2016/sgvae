@@ -24,10 +24,10 @@ def train(num_epochs=200):
     trainData = CycleDataset('cycles/train.cycles')
     valData = CycleDataset('cycles/val.cycles')
 
-    trainLoader = utils.DataLoader(trainData, batch_size=1, shuffle=True, num_workers=0,
+    trainLoader = utils.DataLoader(trainData, batch_size=1, shuffle=False, num_workers=0,
                              collate_fn=trainData.collate_single)
 
-    optimizer = optim.SGD(sgvae.parameters(), lr=0.001, momentum=0.9)
+    optimizer = optim.SGD(sgvae.parameters(), lr=0, momentum=0.9)
 
 
     # for g in trainLoader:
@@ -40,12 +40,12 @@ def train(num_epochs=200):
         if epoch % 5 == 0 and epoch != 0:
             print("Saving to {}.params".format(epoch))
             torch.save(sgvae.state_dict(), 'params/{}.params'.format(epoch))
+            # eval(epoch)
         loss_sum = 0
         for g in tqdm(trainLoader, desc="[{}]".format(epoch)):
             loss, genGraph = sgvae.loss(g, return_graph=True)
-            # nx.draw(genGraph.to_networkx())
-            # plt.show()
             loss_sum += loss
+            break
         loss_sum /= len(trainLoader)
         loss_sum.backward()
         optimizer.step()
