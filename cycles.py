@@ -33,6 +33,8 @@ def train(num_epochs=50):
     for epoch in range(num_epochs):
         optimizer.zero_grad()
         print("Epoch", epoch)
+        if epoch % 5 == 0 and epoch != 0:
+            torch.save(sgvae.state_dict(), 'params/{}.params'.format(epoch))
         loss_sum = 0
         for g in tqdm(trainLoader, desc="[{}]".format(epoch)):
             loss = sgvae.loss(g)
@@ -41,6 +43,7 @@ def train(num_epochs=50):
         loss_sum.backward()
         optimizer.step()
         print(loss_sum)
+
 
 
 def main():
