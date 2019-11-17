@@ -13,30 +13,7 @@ from chem_utils import MoleculeDataset
 import torch.nn as nn
 
 
-class SGVAE(nn.Module):
-    def __init__(self, z_dim, dims):
-        super(SGVAE, self).__init__()
-        self.encoder = GraphDestructor(z_dim=z_dim, dims=dims)
-        self.decoder = GraphConstructor(z_dim=z_dim, dims=dims)
-        self.z_prior = (nn.Parameter(torch.zeros([z_dim]), requires_grad=False),
-                        nn.Parameter(torch.ones([z_dim]), requires_grad=False))
-
-    def loss(self, x):
-        # note that nothing is batched !
-        z, pi, log_qzpi = encoder.encode(x)
-        # z     := vector of dimension z_dim
-        # pi    := vector of [[idx] + [order]]
-        # log_q := scalar
-        log_pz = log_gaussian(z, self.z_prior)
-        # log_pz := scalar
-        genGraph, log_px = decoder.decode(actions=pi)
-        # genGraph := Graph
-        # log_px := scalar
-        unldr = (log_px + log_pz - log_qzpi).detach() # unnormalized log-density ratio ?
-        loss = unldr * log_qzpi + Lambda * log_px
-        return loss
-
-def __main__():
+def main():
     dataset = MoleculeDataset('ChEMBL', 'canonical', ['train', 'val'])
     train_loader = DataLoader(dataset.train_set, batch_size=args['batch_size'],
                               shuffle=True, collate_fn=dataset.collate)
@@ -81,7 +58,7 @@ def __main__():
 
 
 if __name__ == "__main__":
-    __main__()
+    main()
 
 
 

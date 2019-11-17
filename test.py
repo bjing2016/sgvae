@@ -1,16 +1,56 @@
 from models import *
 import torch
-
+import torch.optim as optim
 # Limitations to note: one-hot edge and node labels
 #       All neural networls are only one layer
 #       Undirected (bidirectional) edges
 #       Edge types are initialized one hot and static
 
 if __name__ == "__main__":
+
+    sgvae = SGVAE(rounds=2,
+                    node_dim=5,
+                    msg_dim=6, 
+                    edge_dim=3, 
+                    graph_dim=7,
+                    num_node_types=2,
+                    lamb=1)
+    
+    
+    
+    
+    constructor = GraphConstructor(node_dim=5, graph_dim=7, msg_dim=6, 
+                        num_edge_types=3, num_prop_rounds=5, num_node_types=2)
+
     g = dgl.DGLGraph()
     # add 34 nodes into the graph; nodes are labeled from 0~33
     
-    g.add_nodes(1)
+    g.add_nodes(4)
+    g.ndata['out'] = torch.tensor([
+        [0, 1], [0,1], [0,1], [0,1]
+    ]).float()
+    g.add_edge(1, 2)
+    g.add_edge(2, 1)
+    g.edges[1,2].data['he'] = torch.tensor([[1,0,0]]).float()
+    g.edges[2,1].data['he'] = torch.tensor([[1,0,0]]).float()
+
+    optimizer = optim.SGD(sgvae.parameters(), lr=0.001, momentum=0.9)
+        
+    for i in range(100):
+        optimizer.zero_grad()
+
+        loss = sgvae.loss(g)
+        print(loss)
+        loss.backward()
+        optimizer.step()
+
+
+    exit()
+    g, log_prob = constructor.forward(torch.rand(1, 5), pi=[3,2,1,0], target=g)
+    print(g.ndata, g.edata)
+    print(log_prob)
+    exit()
+
     '''
     # all 78 edges as a list of tuples
     edge_list = [(1, 0), (2, 0), (2, 1), (3, 0), (3, 1), (3, 2),

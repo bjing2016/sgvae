@@ -8,35 +8,73 @@ EDGE_DIM = 60
 import torch.nn as nn
 import dgl
 import torch
-from torch.distributions import Bernoulli, Categorical
+from torch.distributions import Bernoulli, Categorical, MultivariateNormal
 from util import *
 from functools import partial
+from copy import deepcopy
+
+class SGVAE(nn.Module):
+    def __init__(self, rounds, node_dim, msg_dim, edge_dim, graph_dim, num_node_types, lamb):
+        super(SGVAE, self).__init__()
+        self.lamb = lamb
+        self.encoder = GraphDestructor(rounds=rounds, 
+                                        node_dim=node_dim, 
+                                        msg_dim=msg_dim, 
+                                        edge_dim=edge_dim,
+                                        num_node_types=num_node_types)
+        self.decoder = GraphConstructor(node_dim=node_dim,
+                                        graph_dim=graph_dim, 
+                                        msg_dim=msg_dim, 
+                                        num_edge_types=edge_dim, 
+                                        num_prop_rounds=rounds, 
+                                        num_node_types=num_node_types)
+        self.z_prior = (nn.Parameter(torch.zeros([node_dim]), requires_grad=False),
+                        torch.diag(nn.Parameter(torch.ones([node_dim]), requires_grad=False)))
+
+    def loss(self, x):
+        # note that nothing is batched !
+        target = deepcopy(x)
+        orig = deepcopy(x)
+        z, pi, log_qzpi = self.encoder(orig)
+        #print(pi)
+        # z     := vector of dimension z_dim
+        # pi    := vector of [[idx] + [order]]
+        # log_q := scalar
+        log_pz = MultivariateNormal(*self.z_prior).log_prob(z) # Can we do this in init?
+        #log_pz = log_gaussian(z, self.z_prior)
+        # log_pz := scalar
+        #print(x.number_of_nodes())
+        genGraph, log_px = self.decoder(z, pi=pi, target=target)
+        # genGraph := Graph
+        # log_px := scalar
+        unldr = (log_px + log_pz - log_qzpi).detach() # unnormalized log-density ratio ?
+        loss = -unldr * log_qzpi + self.lamb * -log_px
+        return loss
 
 class GraphDestructor(nn.Module):
     # returns the inverse order of nodes and edges by destruction order
-    def __init__(self, node_act_dim=NODE_ACT_DIM, node_hidden_size=NODE_HIDDEN_SIZE, edge_dim=EDGE_DIM):
+    def __init__(self, rounds, node_dim, msg_dim, edge_dim, num_node_types):
         super(GraphDestructor, self).__init__()
-        self.graph_embed = GraphEmbed(node_hidden_size)
-        self.graph_prop = GraphProp(num_prop_rounds, node_hidden_size, node_act_dim, edge_dim)
-        self.choose_victim_agent = ChooseVictimAgent(self.graph_prop, node_hidden_size)
+        self.initial_encoder = nn.Linear(num_node_types, node_dim)
+        self.graph_prop = GraphProp(rounds, node_dim, msg_dim, edge_dim)
+        self.choose_victim_agent = ChooseVictimAgent(node_dim)
+
     def get_log_prob(self):
         return torch.cat(self.choose_victim_agent.log_prob).sum()
-    def encode(self, victims=None):
-        # The graph we will work on
-        self.g = dgl.DGLGraph()
 
-        # If there are some features for nodes and edges,
-        # zero tensors will be set for those of new nodes and edges.
-        self.g.set_n_initializer(dgl.frame.zero_initializer)
-        self.g.set_e_initializer(dgl.frame.zero_initializer)
+    def forward(self, g):
+        # The graph we will work on
+        # print(g.ndata)
+        g.ndata['hv'] = self.initial_encoder(g.ndata['out'].float())
         victim_probs = []
         victim_order = []
         remaining_nodes = list(range(g.number_of_nodes()))
-        while self.g.number_of_nodes() > 1:
+        while g.number_of_nodes() > 1:
             self.graph_prop(g)
             victim_index, victim_prob = self.choose_victim_agent(g)
             victim_order.append(remaining_nodes.pop(victim_index))
-        return self.g.nodes[0].data['hv'], victim_order, sum(victim_probs)
+        victim_order.append(remaining_nodes[0])
+        return g.nodes[0].data['hv'], victim_order[::-1], sum(victim_probs)
 
 class ChooseVictimAgent(nn.Module):
     def __init__(self, node_hidden_size):
@@ -44,21 +82,21 @@ class ChooseVictimAgent(nn.Module):
 
         self.choose_death = nn.Linear(node_hidden_size, 1)
 
+    ''' Commenting this out since it seems unused
     def _initialize_edge_repr(self, g, src_list, dest_list):
         # For untyped edges, we only add 1 to indicate its existence.
         # For multiple edge types, we can use a one hot representation
         # or an embedding module.
         edge_repr = torch.ones(len(src_list), 1)
-        g.edges[src_list, dest_list].data['he'] = edge_repr
+        g.edges[src_list, dest_list].data['he'] = edge_repr '''
 
     def forward(self, g):
-        node_embeddings = g.ndata
-        print("node embedding shape", node_embeddings.shape)
+        node_embeddings = g.ndata['hv']
+        #print("node embedding shape", node_embeddings.shape)
         death_probs = self.choose_death(node_embeddings)
         death_probs = F.softmax(death_probs, dim=1)
-        dist = Categorical(death_probs)
-
-        victim = dist.sample().item()
+        dist = Categorical(death_probs.view(-1))
+        victim = dist.sample()
         victim_prob = dist.log_prob(victim)
         g.remove_nodes([victim])
         return victim, victim_prob
@@ -86,6 +124,7 @@ class GraphConstructor(nn.Module):
         returns DGLGraph with types in ndata['out'], NOT ndata['hv']
         '''
         g = dgl.DGLGraph()
+        g.add_nodes(1)
 
         if target != None:
             N = target.number_of_nodes()
@@ -101,7 +140,7 @@ class GraphConstructor(nn.Module):
                 newdst = reverse_pi[dst]
                 assert(newsrc != newdst)
                 if newsrc < newdst:
-                    edges[newdst][newsrc] =  int(torch.argmax(target.edata[src, dst].data['he'].view(-1)) + 1
+                    edges[newdst][newsrc] =  int(torch.argmax(target.edges[src, dst].data['he'].view(-1))) + 1
 
         g.ndata['hv'] = z
         log_prob = []
@@ -113,21 +152,24 @@ class GraphConstructor(nn.Module):
             log_prob.append(log_prob_entry)
             if not node_added: break
             num_nodes += 1
-
+            edge_action = edges[num_nodes-1][:num_nodes-1] if target != None else None
+            #print('has', num_nodes, 'nodes')
+            #print('edge action', edge_action)
             _, log_prob_entry = self.edge_adder(g, edge_action) # edge_added, log_prob
             log_prob.append(log_prob_entry)
         
         type_logits = self.node_type_extractor(g.ndata['hv'])
         if target == None:
-            types = Categorical(logits=type_logits).sample().item() # Tensor of indices
+            types = Categorical(logits=type_logits).sample() # Tensor of indices
         else:
-            types = g.ndata['out'].argmax(dim=1)[pi] # Argmax for each node
+            types = target.ndata['out'].argmax(dim=1)[pi] # Argmax for each node
         out = torch.zeros(g.number_of_nodes(), self.num_node_types)
-        g.ndata['out'] = out.scatter_(types, 1)
-        node_type_log_prob = F.log_softmax(logits, dim=1).gather(1, types.long().view(-1, 1)).sum()
-        self.log_prob.append(node_type_log_prob)
+        #print(out.shape, types.shape)
+        g.ndata['out'] = out.scatter_(1, types.long().view(-1, 1), 1)
+        node_type_log_prob = F.log_softmax(type_logits, dim=1).gather(1, types.long().view(-1, 1)).sum()
+        log_prob.append(node_type_log_prob)
 
-        return g, log_prob
+        return g, sum(log_prob)
 
 
 
@@ -272,7 +314,7 @@ class AddEdges(nn.Module):
 
         # Static edge types
 
-    def forward(self, g, action=None):
+    def forward(self, g, actions=None):
         '''
         Actions needs to be list of length |current number of nodes - 1|
         with value 0 if no edge is added and |edge type idx + 1| if an edge is added
@@ -288,23 +330,22 @@ class AddEdges(nn.Module):
         )) # N-1, edge_types + 1
 
         #node_probs = torch.sigmoid(logits, dim=0)
-        if action == None:
+        if actions == None:
             actions = Categorical(logits=logits).sample().numpy().tolist()
             #print(actions)
+        for idx, etype in enumerate(actions):
+            if etype == 0: continue
+            e_em = torch.zeros(1, self.num_edge_types)
+            e_em[0,etype-1] = 1.0
             
-            for idx, etype in enumerate(actions):
-                if etype == 0: continue
-                e_em = torch.zeros(1, self.num_edge_types)
-                e_em[0,etype-1] = 1.0
-                
-                g.add_edges(N-1, idx)
-                g.add_edges(idx, N-1)
-                #print('adding edge between', idx, N-1)
-                g.edges[N-1, idx].data['he'] = e_em
-                #print(idx, etype, e_em, g.edges[idx, N-1])
-                
-                g.edges[idx, N-1].data['he'] = e_em
-        
+            g.add_edges(N-1, idx)
+            g.add_edges(idx, N-1)
+            #print('adding edge between', idx, N-1)
+            g.edges[N-1, idx].data['he'] = e_em
+            #print(idx, etype, e_em, g.edges[idx, N-1])
+            
+            g.edges[idx, N-1].data['he'] = e_em
+    
         log_prob = F.log_softmax(logits, dim=1).gather(1, torch.tensor(actions).long().view(-1, 1)).sum()
         self.log_prob.append(log_prob)
         return actions, log_prob
