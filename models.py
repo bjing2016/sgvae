@@ -13,6 +13,8 @@ from util import *
 from functools import partial
 from copy import deepcopy
 
+MAX_NUM_NODES = 10
+
 class SGVAE(nn.Module):
     def __init__(self, rounds, node_dim, msg_dim, edge_dim, graph_dim, num_node_types, lamb):
         super(SGVAE, self).__init__()
@@ -31,11 +33,14 @@ class SGVAE(nn.Module):
         self.z_prior = (nn.Parameter(torch.zeros([node_dim]), requires_grad=False),
                         torch.diag(nn.Parameter(torch.ones([node_dim]), requires_grad=False)))
 
+
+
     def loss(self, x, return_graph=False):
         # note that nothing is batched !
         target = deepcopy(x)
         orig = deepcopy(x)
         z, pi, log_qzpi = self.encoder(orig)
+        print("pi is", pi)
         # print("z, l", z, log_qzpi)
         #print(pi)
         # z     := vector of dimension z_dim
@@ -49,25 +54,32 @@ class SGVAE(nn.Module):
         # genGraph := Graph
         # log_px := scalar
 
-        unldr = (log_px.detach() + log_pz.detach() - log_qzpi) # unnormalized log-density ratio ?
-        loss = -unldr + log_qzpi * -unldr.detach() + self.lamb * -log_px
+        # unldr = (log_px.detach() + log_pz.detach() - log_qzpi) # unnormalized log-density ratio ?
+        # loss = -(unldr + log_qzpi * unldr.detach() + self.lamb * log_px)
+
+        unldr = (log_px + log_pz - log_qzpi).detach()
+        print(unldr)
+        loss = -(log_qzpi * (unldr - 1) + self.lamb * log_px)
 
         # unldr = unldr.detach()
         # loss = unldr - 1/()
-
+        # print(*[float(x) for x in [loss, unldr, log_qzpi, log_pz, log_px]])
         # print("loss:", loss)
         # print("unldr:", unldr)
         # print("log_qzpi:", log_qzpi)
         # print("log_pz:", log_pz)
         # print("log_px:", log_px)
         if return_graph:
-            return loss, genGraph
+            return loss, genGraph, z
         else:
             return loss
 
-    def generate(self, numToGenerate=1):
-        z_dist = torch.distributions.multivariate_normal.MultivariateNormal(*self.z_prior).sample([numToGenerate])
-        graph, _ = self.decoder(z_dist)
+    def generate(self, numToGenerate=1, z_value=None):
+        if z_value is None:
+            z_dist = torch.distributions.multivariate_normal.MultivariateNormal(*self.z_prior)
+            z_value = z_dist.sample([numToGenerate])
+        graph, _ = self.decoder(z_value)
+        # print(graph.ndata['hv'].shape)
         return graph
 
 class GraphDestructor(nn.Module):
@@ -166,7 +178,7 @@ class GraphConstructor(nn.Module):
         g.ndata['hv'] = z
         log_prob = []
         num_nodes = 1
-        while True:
+        for i in range(MAX_NUM_NODES-1):
             self.prop_func(g)
             node_action = num_nodes < len(pi) if pi != None else None
             node_added, log_prob_entry = self.node_adder(g, node_action)
@@ -208,7 +220,11 @@ class GraphEmbed(nn.Module):
             nn.Linear(node_dim, 1),
             nn.Sigmoid()
         )
-        self.node_to_graph = nn.Linear(node_dim, graph_dim)
+        self.node_to_graph = nn.Sequential(
+            nn.Linear(node_dim, node_dim),
+            nn.Dropout(p=0.5),
+            nn.Linear(node_dim, graph_dim)
+        )
 
     def forward(self, g):
         '''
@@ -217,7 +233,7 @@ class GraphEmbed(nn.Module):
         if g.number_of_nodes == 0:
             return torch.zeros(1, self.graph_dim)
         nodes = g.ndata['hv'] # Check this
-        return (self.node_gating(nodes) * self.node_to_graph(nodes)).mean(0, keepdim=True)
+        return (self.node_gating(nodes) * self.node_to_graph(nodes)).sum(0, keepdim=True)
 
 class GraphProp(nn.Module):
     def __init__(self, rounds, node_dim, node_act_dim, edge_dim):
@@ -235,7 +251,7 @@ class GraphProp(nn.Module):
         self.reduce_funcs = [] # Sums incoming messages to be activation
         self.node_update_funcs = [] # GRU cell
         for t in range(rounds):
-            self.message_funcs.append(nn.Sequential(nn.Linear(2 * node_dim + edge_dim, node_act_dim), nn.ReLU()))
+            self.message_funcs.append(nn.Sequential(nn.Linear(2 * node_dim + edge_dim, node_act_dim), nn.Identity()))
             self.reduce_funcs.append(partial(self.dgmg_reduce, round=t))
             self.node_update_funcs.append(nn.GRUCell(self.node_act_dim, node_dim))
 
@@ -256,7 +272,7 @@ class GraphProp(nn.Module):
         m = nodes.mailbox['m']
         #message = torch.cat([
         #    hv_old.unsqueeze(1).expand(-1, m.size(1), -1), m], dim = 2)
-        node_activation = (self.message_funcs[round](m)).mean(1)
+        node_activation = (self.message_funcs[round](m)).sum(1)
 
         return {'a':node_activation}
 
@@ -284,7 +300,7 @@ class AddNode(nn.Module):
         self.graph_embed_func = graph_embed_func
         self.add_node = nn.Linear(graph_embed_func.graph_dim, 1)
 
-        self.node_init = nn.Sequential(nn.Linear(graph_embed_func.graph_dim, node_dim), nn.ReLU())
+        self.node_init = nn.Sequential(nn.Linear(graph_embed_func.graph_dim, node_dim), nn.Identity())
 
         self.init_node_activation = torch.zeros(1, node_act_dim) # To satisfy the GRU cell
 
@@ -310,13 +326,17 @@ class AddNode(nn.Module):
         logit = self.add_node(graph_embed)
         prob = torch.sigmoid(logit)
 
+
         if action == None:
+            # print(prob, graph_embed)
             action = Bernoulli(prob).sample().item()
         if action == bool(1): # not stop
             g.add_nodes(1)
             self.initialize_node(g, graph_embed)
 
         log_prob = bernoulli_action_log_prob(logit, action)
+
+        # print("lp is", action, log_prob)
         self.log_prob.append(log_prob)
 
         return bool(action), log_prob
@@ -332,7 +352,11 @@ class AddEdges(nn.Module):
 
         self.num_edge_types = num_edge_types
         self.graph_embed_func = graph_embed_func
-        self.add_edge = nn.Linear(graph_embed_func.graph_dim + 2 * node_dim, num_edge_types+1) # index 0 being no edge
+        self.add_edge = nn.Sequential(
+            nn.Linear(graph_embed_func.graph_dim + 2 * node_dim, graph_embed_func.graph_dim + 2 * node_dim),
+            nn.ReLU(True),
+            nn.Linear(graph_embed_func.graph_dim + 2 * node_dim, num_edge_types+1)
+        ) # index 0 being no edge
         self.log_prob = []
 
         # Static edge types
@@ -354,8 +378,11 @@ class AddEdges(nn.Module):
 
         #node_probs = torch.sigmoid(logits, dim=0)
         if actions == None:
+            # print("logits shape is", logits.shape)
+            # print(torch.softmax(logits, dim=-1))
+            # print(Categorical(logits=logits).sample())
             actions = Categorical(logits=logits).sample().numpy().tolist()
-            #print(actions)
+            # print("Generated actions", actions)
         for idx, etype in enumerate(actions):
             if etype == 0: continue
             e_em = torch.zeros(1, self.num_edge_types)
@@ -363,11 +390,12 @@ class AddEdges(nn.Module):
 
             g.add_edges(N-1, idx)
             g.add_edges(idx, N-1)
-            #print('adding edge between', idx, N-1)
+            # print('adding edge between', idx, N-1)
             g.edges[N-1, idx].data['he'] = e_em
-            #print(idx, etype, e_em, g.edges[idx, N-1])
+            # print(idx, etype, e_em)
 
             g.edges[idx, N-1].data['he'] = e_em
+            # print(g.edata)
 
         log_prob = F.log_softmax(logits, dim=1).gather(1, torch.tensor(actions).long().view(-1, 1)).sum()
         self.log_prob.append(log_prob)

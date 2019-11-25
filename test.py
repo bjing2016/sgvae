@@ -34,13 +34,12 @@ if __name__ == "__main__":
     g.edges[1,2].data['he'] = torch.tensor([[1,0,0]]).float()
     g.edges[2,1].data['he'] = torch.tensor([[1,0,0]]).float()
 
-    optimizer = optim.SGD(sgvae.parameters(), lr=0.001, momentum=0.9)
+    optimizer = optim.SGD(sgvae.parameters(), lr=0.0001, momentum=0.9)
 
     for i in range(100):
         optimizer.zero_grad()
 
         loss = sgvae.loss(g)
-        print(loss)
         loss.backward()
         optimizer.step()
 

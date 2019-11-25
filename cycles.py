@@ -12,13 +12,46 @@ from models import *
 from tqdm import tqdm
 
 
+def is_cycle(g):
+    size = g.number_of_nodes()
+
+    if size < 3:
+        return False
+
+    node = 0
+    prev = None
+    lastNode = None
+    seen = set()
+    for i in range(size):
+        print(node)
+        neighbors = g.successors(node)
+        if len(neighbors) != 2:
+            return False
+
+        if prev is None:
+            node = g.successors(node)[0]
+        else:
+            for poss in neighbors:
+                if poss == prev: continue
+                elif poss in seen: return False
+                else:
+                    seen.add(poss)
+                    node = poss
+        if node == 0: return False
+        prev = node
+    if 0 not in g.successors(node): return False
+
+    return True
+
+
+
 def train(num_epochs=200):
     num_epochs = int(num_epochs)
-    sgvae = SGVAE(rounds=2,
+    sgvae = SGVAE(rounds=6,
                     node_dim=5,
                     msg_dim=6,
                     edge_dim=3,
-                    graph_dim=7,
+                    graph_dim=30,
                     num_node_types=2,
                     lamb=1)
     trainData = CycleDataset('cycles/train.cycles')
@@ -27,7 +60,7 @@ def train(num_epochs=200):
     trainLoader = utils.DataLoader(trainData, batch_size=1, shuffle=False, num_workers=0,
                              collate_fn=trainData.collate_single)
 
-    optimizer = optim.SGD(sgvae.parameters(), lr=0, momentum=0.9)
+    optimizer = optim.SGD(sgvae.parameters(), lr=0.001, momentum=0.9)
 
 
     # for g in trainLoader:
@@ -40,12 +73,11 @@ def train(num_epochs=200):
         if epoch % 5 == 0 and epoch != 0:
             print("Saving to {}.params".format(epoch))
             torch.save(sgvae.state_dict(), 'params/{}.params'.format(epoch))
-            # eval(epoch)
+            eval(epoch, writeFile=True, z_value=z)
         loss_sum = 0
         for g in tqdm(trainLoader, desc="[{}]".format(epoch)):
-            loss, genGraph = sgvae.loss(g, return_graph=True)
+            loss, genGraph, z = sgvae.loss(g, return_graph=True)
             loss_sum += loss
-            break
         loss_sum /= len(trainLoader)
         loss_sum.backward()
         optimizer.step()
@@ -53,33 +85,50 @@ def train(num_epochs=200):
     print("Saving to {}.params".format(epoch))
     torch.save(sgvae.state_dict(), 'params/{}.params'.format(epoch))
 
-def eval(epoch):
-    sgvae = SGVAE(rounds=2,
+def eval(epoch, writeFile=False, z_value=None, calc_cycle=False):
+    sgvae = SGVAE(rounds=6,
                     node_dim=5,
                     msg_dim=6,
                     edge_dim=3,
-                    graph_dim=7,
+                    graph_dim=30,
                     num_node_types=2,
                     lamb=1)
     sgvae.load_state_dict(torch.load('params/{}.params'.format(epoch)))
     sgvae.eval()
 
-    graph = sgvae.generate()
+    graph = sgvae.generate(z_value=z_value)
     print(graph)
+    plt.clf()
     nx.draw(graph.to_networkx())
-    plt.show()
+    if writeFile:
+        plt.savefig('outputs/{}.png'.format(epoch))
+    else:
+        plt.show()
+    if calc_cycle:
+        NUM = 3000
+        out = 0
+        for i in range(NUM):
+            graph = sgvae.generate(z_value=z_value)
+            out += is_cycle(graph)
+            # if is_cycle(graph):
+            #     plt.clf()
+            #     nx.draw(graph.to_networkx())
+            #     plt.show()
+        print(out/NUM)
+
 
 def main():
     if sys.argv[1] == 'train':
         train(*sys.argv[2:])
     elif sys.argv[1] == 'vis':
-        trainData = CycleDataset('cycles/train.cycles')
-        for x in train:
+        trainData = CycleDataset('cycles/five_train.cycles')
+        for x in trainData:
             break
+        assert is_cycle(x)
         nx.draw(x.to_networkx())
         plt.show()
     else:
-        eval(sys.argv[2])
+        eval(sys.argv[2], calc_cycle=True)
 #
 # def is_valid(g):
 #     # Check if g is a cycle having 10-20 nodes.
