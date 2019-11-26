@@ -3,13 +3,15 @@ import matplotlib.pyplot as plt
 import networkx as nx
 from cycle_dataset import CycleDataset
 import torch
+#torch.set_num_threads(1)
 import torch.optim as optim
 
 import torch.nn as nn
 import torch.utils.model_zoo as model_zoo
 import torch.utils.data as utils
 from models import *
-from tqdm import tqdm
+from tqdm import tqdm, trange
+from copy import deepcopy
 
 
 def is_cycle(g):
@@ -47,21 +49,48 @@ def is_cycle(g):
 
 def train(num_epochs=200):
     num_epochs = int(num_epochs)
-    sgvae = SGVAE(rounds=6,
+    
+    sgvae = SGVAE(rounds=3,
                     node_dim=5,
                     msg_dim=6,
                     edge_dim=3,
                     graph_dim=30,
                     num_node_types=2,
                     lamb=1)
+    
+    destructor = sgvae.encoder
+    constructor = sgvae.decoder
+
     trainData = CycleDataset('cycles/train.cycles')
+    g = trainData[0]
+    print(g.number_of_nodes())
+    print(g)
+    z, pi, __ = destructor(deepcopy(g))
+    print(pi)
+    optimizer = optim.Adam(constructor.parameters(), lr=0.001)
+    for i in trange(18000):
+        optimizer.zero_grad()
+        g, prob = constructor(z, pi=pi, target=g)
+        (-prob).backward(retain_graph=True)
+        optimizer.step()
+        
+        if i % 100 == 0:
+            new = constructor(z)[0]
+            print(new)
+            plt.clf()
+            nx.draw(new.to_networkx())
+            plt.savefig('outputs/{}.png'.format(i))
+
+        print(prob)
+        
+
+    exit()
     valData = CycleDataset('cycles/val.cycles')
 
     trainLoader = utils.DataLoader(trainData, batch_size=1, shuffle=False, num_workers=0,
                              collate_fn=trainData.collate_single)
 
     optimizer = optim.SGD(sgvae.parameters(), lr=0.001, momentum=0.9)
-
 
     # for g in trainLoader:
     #     print(g)

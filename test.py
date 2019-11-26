@@ -1,5 +1,6 @@
 from models import *
 import torch
+
 import torch.optim as optim
 # Limitations to note: one-hot edge and node labels
 #       All neural networls are only one layer
