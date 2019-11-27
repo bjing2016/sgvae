@@ -130,7 +130,7 @@ class ChooseVictimAgent(nn.Module):
         death_probs = self.choose_death(node_embeddings)
         death_probs = F.softmax(death_probs, dim=0)
         dist = Categorical(death_probs.view(-1))
-        
+
         victim = dist.sample()
         #victim = torch.argmax(death_probs.view(-1))
         victim_prob = dist.log_prob(victim)
