@@ -132,10 +132,13 @@ class ChooseVictimAgent(nn.Module):
         dist = Categorical(death_probs.view(-1))
 
         victim = dist.sample()
-        victim = torch.argmax(death_probs.view(-1))
+        # victim = torch.argmax(death_probs.view(-1))
         victim_prob = dist.log_prob(victim)
         g.remove_nodes([victim])
-
+        f.write(str(node_embeddings) + '\n')
+        f.write(str(list(zip(*[[int(y) for y in x] for x in g.edges()]))) + '\n')
+        f.write(str(death_probs) + '\n')
+        f.write('\n')
         #f.write(str(victim_prob))
         #f.write('\n')
         #f.flush()

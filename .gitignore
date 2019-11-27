@@ -4,3 +4,8 @@ __pycache__/
 params/
 !/params/199.params
 outputs/*
+params2/
+params3/
+outputs2/
+outputs3/
+pi.txt

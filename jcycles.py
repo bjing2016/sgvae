@@ -61,7 +61,7 @@ def train(num_epochs=200):
     destructor = sgvae.encoder
     constructor = sgvae.decoder
 
-    trainData = CycleDataset('cycles/five_train.cycles')
+    trainData = CycleDataset('cycles/train.cycles')
     trainLoader = utils.DataLoader(trainData, batch_size=1, shuffle=False, num_workers=0,
                              collate_fn=trainData.collate_single)
     # g = trainData[0]
@@ -69,7 +69,7 @@ def train(num_epochs=200):
     # print(g)
     # z, pi, __ = destructor(deepcopy(g))
     # print(pi)
-    optimizer = optim.Adam(constructor.parameters(), lr=0.01)
+    optimizer = optim.Adam(sgvae.parameters(), lr=0.01)
     for epoch in range(num_epochs):
         print("Epoch", epoch)
         t = tqdm(trainLoader)
@@ -92,11 +92,14 @@ def train(num_epochs=200):
         # (-prob).backward(retain_graph=False)
         optimizer.step()
         # print(prob)
-        if epoch % 100 == 0:
-            new = constructor(z)[0]
-            plt.clf()
-            nx.draw(new.to_networkx())
-            plt.savefig('outputs/{}.png'.format(epoch))
+        # if epoch % 100 == 0:
+        new = constructor(z)[0]
+        plt.clf()
+        nx.draw(new.to_networkx())
+        plt.savefig('outputs3/{}.png'.format(epoch))
+        if epoch % 10 == 0 or epoch == (num_epochs - 1):
+            print("Saving to {}.params".format(epoch))
+            torch.save(sgvae.state_dict(), 'params3/{}.params'.format(epoch))
             # t.set_description("{:.3f}".format(float(prob)))
             # probs.append(float(prob))
             # if i == 99:
