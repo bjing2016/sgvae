@@ -49,7 +49,7 @@ def is_cycle(g):
 
 def train(num_epochs=200):
     num_epochs = int(num_epochs)
-    
+
     sgvae = SGVAE(rounds=3,
                     node_dim=5,
                     msg_dim=6,
@@ -57,40 +57,49 @@ def train(num_epochs=200):
                     graph_dim=30,
                     num_node_types=2,
                     lamb=1)
-    
+
     destructor = sgvae.encoder
     constructor = sgvae.decoder
 
     trainData = CycleDataset('cycles/train.cycles')
-    g = trainData[0]
-    print(g.number_of_nodes())
-    print(g)
-    z, pi, __ = destructor(deepcopy(g))
-    print(pi)
+    trainLoader = utils.DataLoader(trainData, batch_size=1, shuffle=True, num_workers=0,
+                             collate_fn=trainData.collate_single)
+    # g = trainData[0]
+    # print(g.number_of_nodes())
+    # print(g)
+    # z, pi, __ = destructor(deepcopy(g))
+    # print(pi)
     optimizer = optim.Adam(constructor.parameters(), lr=0.001)
-    for i in trange(18000):
-        optimizer.zero_grad()
-        g, prob = constructor(z, pi=pi, target=g)
-        (-prob).backward(retain_graph=True)
-        optimizer.step()
-        
-        if i % 100 == 0:
-            new = constructor(z)[0]
-            print(new)
-            plt.clf()
-            nx.draw(new.to_networkx())
-            plt.savefig('outputs/{}.png'.format(i))
+    for epoch in range(num_epochs):
+        t = tqdm(trainLoader)
+        probs = []
+        for i, g in enumerate(t):
+            z, pi, __ = destructor(deepcopy(g))
+            optimizer.zero_grad()
+            g, prob = constructor(z, pi=pi, target=g)
+            (-prob).backward(retain_graph=True)
+            optimizer.step()
+            t.set_description("{:.3f}".format(float(prob)))
+            probs.append(float(prob))
+            if i == 99:
+                avg_prob = sum(probs) / len(probs)
+                t.set_description("Avg: {:.3f}".format(avg_prob))
 
-        print(prob)
-        
+        # print(avg_prob)
+
+
+        new = constructor(z)[0]
+        plt.clf()
+        nx.draw(new.to_networkx())
+        plt.savefig('outputs/{}.png'.format(epoch))
+
+            # print(prob)
+
 
     exit()
     valData = CycleDataset('cycles/val.cycles')
 
-    trainLoader = utils.DataLoader(trainData, batch_size=1, shuffle=False, num_workers=0,
-                             collate_fn=trainData.collate_single)
-
-    optimizer = optim.SGD(sgvae.parameters(), lr=0.001, momentum=0.9)
+    optimizer = optim.SGD(sgvae.parameters(), lr=0.01, momentum=0.9)
 
     # for g in trainLoader:
     #     print(g)
