@@ -49,19 +49,25 @@ def is_cycle(g):
 
 def train(num_epochs=200):
     num_epochs = int(num_epochs)
+<<<<<<< HEAD
     
     sgvae = SGVAE(rounds=2,
+=======
+
+    sgvae = SGVAE(rounds=3,
+>>>>>>> b41035aef025d6b22932a644a513e6b4e3b39da3
                     node_dim=5,
                     msg_dim=6,
                     edge_dim=3,
                     graph_dim=30,
                     num_node_types=2,
                     lamb=1)
-    
+
     destructor = sgvae.encoder
     constructor = sgvae.decoder
 
     trainData = CycleDataset('cycles/train.cycles')
+<<<<<<< HEAD
     g = trainData[0]
     
     
@@ -90,14 +96,46 @@ def train(num_epochs=200):
             plt.savefig('outputs/{}.png'.format(i))
         if i % 1000 == 0:
             optimizer = optim.Adam(constructor.parameters(), lr=0.0005)
+=======
+    trainLoader = utils.DataLoader(trainData, batch_size=1, shuffle=True, num_workers=0,
+                             collate_fn=trainData.collate_single)
+    # g = trainData[0]
+    # print(g.number_of_nodes())
+    # print(g)
+    # z, pi, __ = destructor(deepcopy(g))
+    # print(pi)
+    optimizer = optim.Adam(constructor.parameters(), lr=0.001)
+    for epoch in range(num_epochs):
+        t = tqdm(trainLoader)
+        probs = []
+        for i, g in enumerate(t):
+            z, pi, __ = destructor(deepcopy(g))
+            optimizer.zero_grad()
+            g, prob = constructor(z, pi=pi, target=g)
+            (-prob).backward(retain_graph=True)
+            optimizer.step()
+            t.set_description("{:.3f}".format(float(prob)))
+            probs.append(float(prob))
+            if i == 99:
+                avg_prob = sum(probs) / len(probs)
+                t.set_description("Avg: {:.3f}".format(avg_prob))
+
+        # print(avg_prob)
+
+
+        new = constructor(z)[0]
+        plt.clf()
+        nx.draw(new.to_networkx())
+        plt.savefig('outputs/{}.png'.format(epoch))
+
+            # print(prob)
+
+>>>>>>> b41035aef025d6b22932a644a513e6b4e3b39da3
 
     exit()
     valData = CycleDataset('cycles/val.cycles')
 
-    trainLoader = utils.DataLoader(trainData, batch_size=1, shuffle=False, num_workers=0,
-                             collate_fn=trainData.collate_single)
-
-    optimizer = optim.SGD(sgvae.parameters(), lr=0.001, momentum=0.9)
+    optimizer = optim.SGD(sgvae.parameters(), lr=0.01, momentum=0.9)
 
     # for g in trainLoader:
     #     print(g)
