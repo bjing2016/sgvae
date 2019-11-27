@@ -129,7 +129,10 @@ class ChooseVictimAgent(nn.Module):
         #print("node embedding shape", node_embeddings.shape)
         death_probs = self.choose_death(node_embeddings)
         death_probs = F.softmax(death_probs, dim=0)
+<<<<<<< HEAD
 
+=======
+>>>>>>> 53e496438712c27fbab8463194edb322e01663cb
         dist = Categorical(death_probs.view(-1))
         
         victim = dist.sample()

@@ -49,17 +49,8 @@ def is_cycle(g):
 
 def train(num_epochs=200):
     num_epochs = int(num_epochs)
-<<<<<<< HEAD
-    
-    sgvae = SGVAE(rounds=2,
-=======
 
-<<<<<<< HEAD:cycles.py
-    sgvae = SGVAE(rounds=3,
->>>>>>> b41035aef025d6b22932a644a513e6b4e3b39da3
-=======
     sgvae = SGVAE(rounds=2,
->>>>>>> 9c7ad2579aa960e123004eddd4734aeec9188852:jcycles.py
                     node_dim=5,
                     msg_dim=6,
                     edge_dim=3,
@@ -71,41 +62,7 @@ def train(num_epochs=200):
     constructor = sgvae.decoder
 
     trainData = CycleDataset('cycles/train.cycles')
-<<<<<<< HEAD:cycles.py
-<<<<<<< HEAD
-    g = trainData[0]
-    
-    
-    z, pi, __ = destructor(deepcopy(g))
-    pi = range(7)
-    #print(pi)
-    optimizer = optim.Adam(sgvae.parameters(), lr=0.0005)
-    t = trange(18000)
-    f = open('pi.txt', 'w')
-    for i in t:
-        optimizer.zero_grad()
-        z, pi, __ = destructor(deepcopy(g))
-        _, prob = constructor(z, pi=pi, target=g)
-
-        loss, genGraph, z, log_qzpi, prob = sgvae.loss(g, return_graph=True)
-        f.write(str((z.detach().numpy(), pi, float(log_qzpi), float(prob))))
-        f.flush()
-        (loss).backward(retain_graph=False)
-        #(-prob).backward(retain_graph=False)
-        optimizer.step()
-        t.set_description('{:.3f}'.format(float(prob)))
-        if i % 100 == 0:
-            new = sgvae.generate()
-            plt.clf()
-            nx.draw(new.to_networkx())
-            plt.savefig('outputs/{}.png'.format(i))
-        if i % 1000 == 0:
-            optimizer = optim.Adam(constructor.parameters(), lr=0.0005)
-=======
-    trainLoader = utils.DataLoader(trainData, batch_size=1, shuffle=True, num_workers=0,
-=======
     trainLoader = utils.DataLoader(trainData, batch_size=1, shuffle=False, num_workers=0,
->>>>>>> 9c7ad2579aa960e123004eddd4734aeec9188852:jcycles.py
                              collate_fn=trainData.collate_single)
     # g = trainData[0]
     # print(g.number_of_nodes())
@@ -118,14 +75,28 @@ def train(num_epochs=200):
         t = tqdm(trainLoader)
         probs = []
         # g = trainData[0]
-        for i, g in enumerate(t):
+        # for i, g in enumerate(t):
             # z, pi, __ = destructor(deepcopy(g))
-            optimizer.zero_grad()
-            sgvae.
-            # g, prob = constructor(z, pi=pi, target=g)
-            # (-prob).backward(retain_graph=False)
-            optimizer.step()
-            print(prob)
+        optimizer.zero_grad()
+        loss_sum = 0
+        for i, g in enumerate(t):
+            loss, genGraph, z, log_qzpi, log_px = sgvae.loss(g, return_graph=True)
+            loss_sum += loss
+            t.set_description("{:.3f}".format(float(loss)))
+            if i == 99:
+                avg_prob = loss_sum / 100
+                t.set_description("Avg: {:.3f}".format(float(avg_prob)))
+        loss_sum /= len(trainLoader)
+        loss_sum.backward()
+        # g, prob = constructor(z, pi=pi, target=g)
+        # (-prob).backward(retain_graph=False)
+        optimizer.step()
+        # print(prob)
+        new = constructor(z)[0]
+        plt.clf()
+        nx.draw(new.to_networkx())
+        plt.savefig('outputs/{}.png'.format(epoch))
+        print("plot saved", epoch)
             # t.set_description("{:.3f}".format(float(prob)))
             # probs.append(float(prob))
             # if i == 99:
@@ -134,16 +105,11 @@ def train(num_epochs=200):
 
         # print(avg_prob)
 
-        if epoch % 100 == 0:
-            new = constructor(z)[0]
-            plt.clf()
-            nx.draw(new.to_networkx())
-            plt.savefig('outputs/{}.png'.format(epoch))
-            print("plot saved", epoch)
+        # if epoch % 100 == 0:
+
 
             # print(prob)
 
->>>>>>> b41035aef025d6b22932a644a513e6b4e3b39da3
 
     exit()
     valData = CycleDataset('cycles/val.cycles')
