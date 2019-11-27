@@ -75,14 +75,28 @@ def train(num_epochs=200):
         t = tqdm(trainLoader)
         probs = []
         # g = trainData[0]
-        for i, g in enumerate(t):
+        # for i, g in enumerate(t):
             # z, pi, __ = destructor(deepcopy(g))
-            optimizer.zero_grad()
-            sgvae.
-            # g, prob = constructor(z, pi=pi, target=g)
-            # (-prob).backward(retain_graph=False)
-            optimizer.step()
-            print(prob)
+        optimizer.zero_grad()
+        loss_sum = 0
+        for i, g in enumerate(t):
+            loss, genGraph, z, log_qzpi, log_px = sgvae.loss(g, return_graph=True)
+            loss_sum += loss
+            t.set_description("{:.3f}".format(float(loss)))
+            if i == 99:
+                avg_prob = loss_sum / 100
+                t.set_description("Avg: {:.3f}".format(float(avg_prob)))
+        loss_sum /= len(trainLoader)
+        loss_sum.backward()
+        # g, prob = constructor(z, pi=pi, target=g)
+        # (-prob).backward(retain_graph=False)
+        optimizer.step()
+        # print(prob)
+        new = constructor(z)[0]
+        plt.clf()
+        nx.draw(new.to_networkx())
+        plt.savefig('outputs/{}.png'.format(epoch))
+        print("plot saved", epoch)
             # t.set_description("{:.3f}".format(float(prob)))
             # probs.append(float(prob))
             # if i == 99:
@@ -91,12 +105,8 @@ def train(num_epochs=200):
 
         # print(avg_prob)
 
-        if epoch % 100 == 0:
-            new = constructor(z)[0]
-            plt.clf()
-            nx.draw(new.to_networkx())
-            plt.savefig('outputs/{}.png'.format(epoch))
-            print("plot saved", epoch)
+        # if epoch % 100 == 0:
+
 
             # print(prob)
 
