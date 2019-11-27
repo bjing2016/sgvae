@@ -12,6 +12,7 @@ from torch.distributions import Bernoulli, Categorical, MultivariateNormal
 from util import *
 from functools import partial
 from copy import deepcopy
+from pi import f
 
 MAX_NUM_NODES = 16
 
@@ -30,7 +31,7 @@ class SGVAE(nn.Module):
                                         num_edge_types=edge_dim,
                                         num_prop_rounds=rounds,
                                         num_node_types=num_node_types)
-        self.z_prior = (nn.Parameter(torch.zeros([node_dim]), requires_grad=False),
+        self.z_prior = MultivariateNormal(nn.Parameter(torch.zeros([node_dim]), requires_grad=False),
                         torch.diag(nn.Parameter(torch.ones([node_dim]), requires_grad=False)))
 
 
@@ -46,7 +47,7 @@ class SGVAE(nn.Module):
         # z     := vector of dimension z_dim
         # pi    := vector of [[idx] + [order]]
         # log_q := scalar
-        log_pz = MultivariateNormal(*self.z_prior).log_prob(z) # Can we do this in init?
+        log_pz = self.z_prior.log_prob(z) # Can we do this in init?
         #log_pz = log_gaussian(z, self.z_prior)
         # log_pz := scalar
         #print(x.number_of_nodes())
@@ -76,8 +77,7 @@ class SGVAE(nn.Module):
 
     def generate(self, numToGenerate=1, z_value=None):
         if z_value is None:
-            z_dist = torch.distributions.multivariate_normal.MultivariateNormal(*self.z_prior)
-            z_value = z_dist.sample([numToGenerate])
+            z_value = self.z_prior.sample([numToGenerate])
         graph, _ = self.decoder(z_value)
         # print(graph.ndata['hv'].shape)
         return graph
@@ -90,12 +90,13 @@ class GraphDestructor(nn.Module):
         self.graph_prop = GraphProp(rounds, node_dim, msg_dim, edge_dim)
         self.choose_victim_agent = ChooseVictimAgent(node_dim)
 
-    def get_log_prob(self):
-        return torch.cat(self.choose_victim_agent.log_prob).sum()
+    '''Comment out since seems unused'''
+    #def get_log_prob(self):
+    #    return torch.cat(self.choose_victim_agent.log_prob).sum()
 
     def forward(self, g):
         # The graph we will work on
-        # print(g.ndata)
+        #print(g.ndata['out'].float())
         g.ndata['hv'] = self.initial_encoder(g.ndata['out'].float())
         victim_probs = []
         victim_order = []
@@ -127,11 +128,19 @@ class ChooseVictimAgent(nn.Module):
         node_embeddings = g.ndata['hv']
         #print("node embedding shape", node_embeddings.shape)
         death_probs = self.choose_death(node_embeddings)
-        death_probs = F.softmax(death_probs, dim=1)
+        death_probs = F.softmax(death_probs, dim=0)
+
         dist = Categorical(death_probs.view(-1))
+        
         victim = dist.sample()
+        victim = torch.argmax(death_probs.view(-1))
         victim_prob = dist.log_prob(victim)
         g.remove_nodes([victim])
+
+        #f.write(str(victim_prob))
+        #f.write('\n')
+        #f.flush()
+
         return victim, victim_prob
 
 '''
@@ -255,7 +264,7 @@ class GraphProp(nn.Module):
         self.reduce_funcs = [] # Sums incoming messages to be activation
         self.node_update_funcs = [] # GRU cell
         for t in range(rounds):
-            self.message_funcs.append(nn.Sequential(nn.Linear(2 * node_dim + edge_dim, node_act_dim), nn.Identity()))
+            self.message_funcs.append(nn.Sequential(nn.Linear(2 * node_dim + edge_dim, node_act_dim)))
             self.reduce_funcs.append(partial(self.dgmg_reduce, round=t))
             self.node_update_funcs.append(nn.GRUCell(self.node_act_dim, node_dim))
 

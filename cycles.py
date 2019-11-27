@@ -1,4 +1,5 @@
 import sys
+from pi import f
 import matplotlib.pyplot as plt
 import networkx as nx
 from cycle_dataset import CycleDataset
@@ -49,19 +50,14 @@ def is_cycle(g):
 
 def train(num_epochs=200):
     num_epochs = int(num_epochs)
-<<<<<<< HEAD
     
-    sgvae = SGVAE(rounds=2,
-=======
-
     sgvae = SGVAE(rounds=3,
->>>>>>> b41035aef025d6b22932a644a513e6b4e3b39da3
-                    node_dim=5,
+                    node_dim=3,
                     msg_dim=6,
                     edge_dim=3,
                     graph_dim=30,
                     num_node_types=2,
-                    lamb=1)
+                    lamb=0)
 
     destructor = sgvae.encoder
     constructor = sgvae.decoder
@@ -70,24 +66,27 @@ def train(num_epochs=200):
     g = trainData[0]
     
     
-    z, pi, __ = destructor(deepcopy(g))
-    pi = range(7)
+    #z, pi, __ = destructor(deepcopy(g))
+    #pi = range(7)
     #print(pi)
-    optimizer = optim.Adam(sgvae.parameters(), lr=0.0005)
+    optimizer = optim.Adam(destructor.parameters(), lr=1)
     t = trange(18000)
-    f = open('pi.txt', 'w')
+
     for i in t:
         optimizer.zero_grad()
-        z, pi, __ = destructor(deepcopy(g))
-        _, prob = constructor(z, pi=pi, target=g)
+        z, pi, log_qzpi = destructor(deepcopy(g))
+        #_, prob = constructor(z, pi=pi, target=g)
 
-        loss, genGraph, z, log_qzpi, prob = sgvae.loss(g, return_graph=True)
-        f.write(str((z.detach().numpy(), pi, float(log_qzpi), float(prob))))
-        f.flush()
-        (loss).backward(retain_graph=False)
+
+        #loss, genGraph, z, log_qzpi, prob = sgvae.loss(g, return_graph=True)
+        #f.write(str(pi))# (z.detach().numpy(), pi, float(log_qzpi), float(prob))))
+        #f.write('\n')
+        #f.flush()
+        (-log_qzpi).backward(retain_graph=False)
         #(-prob).backward(retain_graph=False)
         optimizer.step()
-        t.set_description('{:.3f}'.format(float(prob)))
+        t.set_description('{:.10f}'.format(float(log_qzpi)))
+        '''
         if i % 100 == 0:
             new = sgvae.generate()
             plt.clf()
@@ -95,7 +94,7 @@ def train(num_epochs=200):
             plt.savefig('outputs/{}.png'.format(i))
         if i % 1000 == 0:
             optimizer = optim.Adam(constructor.parameters(), lr=0.0005)
-
+        '''
     exit()
     valData = CycleDataset('cycles/val.cycles')
 
