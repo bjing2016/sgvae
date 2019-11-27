@@ -40,7 +40,7 @@ class SGVAE(nn.Module):
         target = deepcopy(x)
         orig = deepcopy(x)
         z, pi, log_qzpi = self.encoder(orig)
-        print("pi is", pi)
+        #print("pi is", pi)
         # print("z, l", z, log_qzpi)
         #print(pi)
         # z     := vector of dimension z_dim
@@ -58,7 +58,7 @@ class SGVAE(nn.Module):
         # loss = -(unldr + log_qzpi * unldr.detach() + self.lamb * log_px)
 
         unldr = (log_px + log_pz - log_qzpi).detach()
-        print(unldr)
+        #print(unldr)
         loss = -(log_qzpi * (unldr - 1) + self.lamb * log_px)
 
         # unldr = unldr.detach()
@@ -70,7 +70,7 @@ class SGVAE(nn.Module):
         # print("log_pz:", log_pz)
         # print("log_px:", log_px)
         if return_graph:
-            return loss, genGraph, z
+            return loss, genGraph, z, log_qzpi, log_px
         else:
             return loss
 
