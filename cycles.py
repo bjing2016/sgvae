@@ -66,6 +66,7 @@ def train(num_epochs=200):
     print(g.number_of_nodes())
     print(g)
     z, pi, __ = destructor(deepcopy(g))
+    pi = range(7)
     print(pi)
     optimizer = optim.Adam(constructor.parameters(), lr=0.001)
     for i in trange(18000):

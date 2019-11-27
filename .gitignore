@@ -3,3 +3,4 @@
 __pycache__/
 params/
 !/params/199.params
+outputs/*

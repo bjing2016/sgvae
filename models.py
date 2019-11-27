@@ -222,7 +222,11 @@ class GraphEmbed(nn.Module):
         )
         self.node_to_graph = nn.Sequential(
             nn.Linear(node_dim, node_dim),
-            nn.Dropout(p=0.5),
+            nn.ReLU(),
+            nn.Linear(node_dim, node_dim),
+            nn.ReLU(),
+            nn.Linear(node_dim, node_dim),
+            nn.ReLU(),
             nn.Linear(node_dim, graph_dim)
         )
 
@@ -352,10 +356,15 @@ class AddEdges(nn.Module):
 
         self.num_edge_types = num_edge_types
         self.graph_embed_func = graph_embed_func
+        mid_dim = graph_embed_func.graph_dim + 2 * node_dim
         self.add_edge = nn.Sequential(
-            nn.Linear(graph_embed_func.graph_dim + 2 * node_dim, graph_embed_func.graph_dim + 2 * node_dim),
+            nn.Linear(mid_dim, mid_dim),
             nn.ReLU(True),
-            nn.Linear(graph_embed_func.graph_dim + 2 * node_dim, num_edge_types+1)
+            nn.Linear(mid_dim, mid_dim),
+            nn.ReLU(),
+            #nn.Linear(mid_dim, mid_dim),
+            #nn.ReLU(),
+            nn.Linear(mid_dim, num_edge_types+1)
         ) # index 0 being no edge
         self.log_prob = []
 
