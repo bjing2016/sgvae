@@ -13,7 +13,7 @@ from util import *
 from functools import partial
 from copy import deepcopy
 
-MAX_NUM_NODES = 10
+MAX_NUM_NODES = 16
 
 class SGVAE(nn.Module):
     def __init__(self, rounds, node_dim, msg_dim, edge_dim, graph_dim, num_node_types, lamb):

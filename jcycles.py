@@ -50,7 +50,7 @@ def is_cycle(g):
 def train(num_epochs=200):
     num_epochs = int(num_epochs)
 
-    sgvae = SGVAE(rounds=3,
+    sgvae = SGVAE(rounds=2,
                     node_dim=5,
                     msg_dim=6,
                     edge_dim=3,
@@ -62,7 +62,7 @@ def train(num_epochs=200):
     constructor = sgvae.decoder
 
     trainData = CycleDataset('cycles/train.cycles')
-    trainLoader = utils.DataLoader(trainData, batch_size=1, shuffle=True, num_workers=0,
+    trainLoader = utils.DataLoader(trainData, batch_size=1, shuffle=False, num_workers=0,
                              collate_fn=trainData.collate_single)
     # g = trainData[0]
     # print(g.number_of_nodes())
@@ -71,27 +71,32 @@ def train(num_epochs=200):
     # print(pi)
     optimizer = optim.Adam(constructor.parameters(), lr=0.001)
     for epoch in range(num_epochs):
+        print("Epoch", epoch)
         t = tqdm(trainLoader)
         probs = []
+        # g = trainData[0]
         for i, g in enumerate(t):
-            z, pi, __ = destructor(deepcopy(g))
+            # z, pi, __ = destructor(deepcopy(g))
             optimizer.zero_grad()
-            g, prob = constructor(z, pi=pi, target=g)
-            (-prob).backward(retain_graph=True)
+            sgvae.
+            # g, prob = constructor(z, pi=pi, target=g)
+            # (-prob).backward(retain_graph=False)
             optimizer.step()
-            t.set_description("{:.3f}".format(float(prob)))
-            probs.append(float(prob))
-            if i == 99:
-                avg_prob = sum(probs) / len(probs)
-                t.set_description("Avg: {:.3f}".format(avg_prob))
+            print(prob)
+            # t.set_description("{:.3f}".format(float(prob)))
+            # probs.append(float(prob))
+            # if i == 99:
+            #     avg_prob = sum(probs) / len(probs)
+            #     t.set_description("Avg: {:.3f}".format(avg_prob))
 
         # print(avg_prob)
 
-
-        new = constructor(z)[0]
-        plt.clf()
-        nx.draw(new.to_networkx())
-        plt.savefig('outputs/{}.png'.format(epoch))
+        if epoch % 100 == 0:
+            new = constructor(z)[0]
+            plt.clf()
+            nx.draw(new.to_networkx())
+            plt.savefig('outputs/{}.png'.format(epoch))
+            print("plot saved", epoch)
 
             # print(prob)
 
@@ -124,7 +129,7 @@ def train(num_epochs=200):
     torch.save(sgvae.state_dict(), 'params/{}.params'.format(epoch))
 
 def eval(epoch, writeFile=False, z_value=None, calc_cycle=False):
-    sgvae = SGVAE(rounds=6,
+    sgvae = SGVAE(rounds=2,
                     node_dim=5,
                     msg_dim=6,
                     edge_dim=3,
