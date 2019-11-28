@@ -14,11 +14,11 @@ from torch.utils.data import Dataset
 def create_cycle_with_size(size):
     g = dgl.DGLGraph()
     g.add_nodes(size)
-    g.ndata['out'] = torch.FloatTensor(np.tile([0, 1], [size, 1]))
+    g.ndata['out'] = torch.FloatTensor(np.tile([1], [size, 1])) # reduced dims
     src, dest = np.arange(size), np.roll(np.arange(size), -1)
     g.add_edges(src, dest)
     g.add_edges(dest, src)
-    g.edata['he'] = torch.FloatTensor(np.tile([1, 0, 0], [2*size, 1]))
+    g.edata['he'] = torch.FloatTensor(np.tile([1], [2*size, 1])) # reduced dims
     return g
 
 def generate_dataset(minSize, maxSize, nSamples, fname):

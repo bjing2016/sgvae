@@ -12,9 +12,8 @@ from torch.distributions import Bernoulli, Categorical, MultivariateNormal
 from util import *
 from functools import partial
 from copy import deepcopy
-from pi import f
 
-MAX_NUM_NODES = 16
+MAX_NUM_NODES = 30
 
 class SGVAE(nn.Module):
     def __init__(self, rounds, node_dim, msg_dim, edge_dim, graph_dim, num_node_types, lamb):
@@ -71,7 +70,7 @@ class SGVAE(nn.Module):
         # print("log_pz:", log_pz)
         # print("log_px:", log_px)
         if return_graph:
-            return loss, genGraph, z, log_qzpi, log_px
+            return loss, genGraph, z, log_qzpi, log_px, unldr
         else:
             return loss
 
@@ -135,10 +134,10 @@ class ChooseVictimAgent(nn.Module):
         # victim = torch.argmax(death_probs.view(-1))
         victim_prob = dist.log_prob(victim)
         g.remove_nodes([victim])
-        f.write(str(node_embeddings) + '\n')
-        f.write(str(list(zip(*[[int(y) for y in x] for x in g.edges()]))) + '\n')
-        f.write(str(death_probs) + '\n')
-        f.write('\n')
+        #f.write(str(node_embeddings) + '\n')
+        #f.write(str(list(zip(*[[int(y) for y in x] for x in g.edges()]))) + '\n')
+        #f.write(str(death_probs) + '\n')
+        #f.write('\n')
         #f.write(str(victim_prob))
         #f.write('\n')
         #f.flush()

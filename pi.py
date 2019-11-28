@@ -1,1 +1,0 @@
-f = open('pi.txt', 'w')
