@@ -25,15 +25,17 @@ def train(name, dataset, accept_func, batch_size=10, num_epochs=1000, stop_file=
 
     trainLoader = utils.DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0,
                              collate_fn=dataset.collate_single)
-    optimizer = optim.Adam(sgvae.parameters(), lr=0.01)
+    optimizer = optim.Adam(sgvae.parameters(), lr=0.001)
     
     for epoch in range(num_epochs):
         t = tqdm(trainLoader)
         loss_sum = 0
+        unldr_sum = 0
         for i, g in enumerate(t):
             loss, genGraph, z, log_qzpi, log_px, unldr = sgvae.loss(g, return_graph=True)
             loss_sum += loss
             t.set_description("{:.3f}".format(float(unldr)))
+            unldr_sum += float(unldr)
             if (i + 1) % batch_size == 0:
                 optimizer.zero_grad()
                 loss_sum /= batch_size
@@ -47,7 +49,7 @@ def train(name, dataset, accept_func, batch_size=10, num_epochs=1000, stop_file=
         plt.clf()
 
         frac_acceptable = count_acceptable(sgvae, accept_func)
-        outputfile.write('{} {} {}\n'.format(name, epoch, frac_acceptable))
+        outputfile.write('{},{},{},{}\n'.format(name, epoch, frac_acceptable, unldr_sum/len(dataset)))
         outputfile.flush()
 
         if epoch % 10 == 0 or epoch == (num_epochs - 1):
