@@ -25,7 +25,7 @@ def train(name, dataset, accept_func, batch_size=10, num_epochs=1000, stop_file=
 
     trainLoader = utils.DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0,
                              collate_fn=dataset.collate_single)
-    optimizer = optim.Adam(sgvae.parameters(), lr=0.001)
+    optimizer = optim.Adam(sgvae.parameters(), lr=0.01)
     
     for epoch in range(num_epochs):
         t = tqdm(trainLoader)

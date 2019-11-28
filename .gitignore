@@ -9,3 +9,5 @@ params3/
 outputs2/
 outputs3/
 pi.txt
+slurm*
+train/*

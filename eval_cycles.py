@@ -35,5 +35,5 @@ def is_cycle(g):
 
 
 trainData = CycleDataset('datasets/cycles.pkl')
-train('cycles', trainData, is_cycle, batch_size=10, num_epochs=1000, stop_file='stopfile')
+train('cycles', trainData, is_cycle, batch_size=10, num_epochs=20000, stop_file='stopfile')
 
