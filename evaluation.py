@@ -6,6 +6,7 @@ import networkx as nx
 import torch.optim as optim
 from tqdm import tqdm
 from output import outputfile
+import numpy as np
 
 
 def train(name, dataset, accept_func, batch_size=10, num_epochs=1000, stop_file=None):
@@ -69,5 +70,29 @@ def count_acceptable(sgvae, accept_func):
     return acceptable / 100
 
 def evaluate(sgvae, accept_func, x1, x2, feature_func):
-    NotImplemented
+    destructor = sgvae.encoder
+    constructor = sgvae.decoder
+    z1 = z2 = 0
+    for i in range(100):
+        z1 += destructor(x1)[0]
+        z2 += destructor(x2)[0]
+    z1 /= 100
+    z2 /= 100
 
+    for p in np.arange(0, 1.001, 0.02):
+        z = p*z1 + (1-p)*z2
+        total = 0
+        acceptable = 0
+        gs = []
+        features = []
+        while acceptable < 100:
+            total += 1
+            g = constructor(z)
+            if accept_func(g):
+                acceptable += 1
+                gs.append(g)
+                features.append(feature_func(g))
+        s = '{},{},{}'.format(p, total, feature_func)
+        print(s)
+        outputfile.write(s)
+        outputfile.flush()

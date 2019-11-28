@@ -37,3 +37,10 @@ def is_cycle(g):
 trainData = CycleDataset('datasets/cycles.pkl')
 train('cycles', trainData, is_cycle, batch_size=10, num_epochs=20000, stop_file='stopfile')
 
+'''Interpolation
+sgvae = RESTORE PARAMS
+import cycle_dataset
+x1 = cycle_dataset.create_cycle_with_size(5)
+x2 = cycle_dataset.create_cycle_with_size(15)
+evaluate(sgvae, is_cycle, x1, x2, lambda g: g.number_of_nodes())
+'''

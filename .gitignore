@@ -11,3 +11,4 @@ outputs3/
 pi.txt
 slurm*
 train/*
+output.txt
