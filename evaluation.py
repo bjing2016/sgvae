@@ -19,9 +19,9 @@ def train(name, dataset, accept_func, batch_size=10, num_epochs=1000, stop_file=
     sgvae = SGVAE(rounds=3,
                     node_dim=5,             # TODO: PLEASE DO NOT FEED IN DATA WITH MORE THAN ONE EDGE OR NODE TYPE!!!!!
                     msg_dim=6,
-                    edge_dim=1,
+                    edge_dim=3,
                     graph_dim=30,
-                    num_node_types=1,
+                    num_node_types=2,
                     lamb=1)
 
     trainLoader = utils.DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0,
