@@ -4,31 +4,32 @@ from models import SGVAE
 import torch.utils.data as utils
 import networkx as nx
 import torch.optim as optim
-from tqdm import tqdm
+from tqdm import tqdm, trange
 from output import outputfile
 import numpy as np
 
 
-def train(name, dataset, accept_func, batch_size=10, num_epochs=1000, stop_file=None):
+def train(name, dataset, accept_func, batch_size=10, num_epochs=1000, sgvae=None, start_epoch=0, optimizer=None):
     '''
     |dataset| 100 examples
     |accept_func|: DGLGraph -> bool
     |feature_func|: DGLGraph -> float
     |stop_file| write "stop" to this file to stop
     '''
-    sgvae = SGVAE(rounds=3,
-                    node_dim=5,             # TODO: PLEASE DO NOT FEED IN DATA WITH MORE THAN ONE EDGE OR NODE TYPE!!!!!
-                    msg_dim=6,
-                    edge_dim=3,
-                    graph_dim=30,
-                    num_node_types=2,
-                    lamb=1)
+    if sgvae == None:
+        sgvae = SGVAE(rounds=2,
+                        node_dim=5,             # TODO: PLEASE DO NOT FEED IN DATA WITH MORE THAN ONE EDGE OR NODE TYPE!!!!!
+                        msg_dim=6,
+                        edge_dim=1,
+                        graph_dim=30,
+                        num_node_types=1,
+                        lamb=1)
 
-    trainLoader = utils.DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0,
+    trainLoader = utils.DataLoader(dataset, batch_size=1, shuffle=True, num_workers=0,
                              collate_fn=dataset.collate_single)
-    optimizer = optim.Adam(sgvae.parameters(), lr=0.01)
+    if optimizer == None: optimizer = optim.Adam(sgvae.parameters(), lr=0.01)
     
-    for epoch in range(num_epochs):
+    for epoch in range(start_epoch, num_epochs):
         t = tqdm(trainLoader)
         loss_sum = 0
         unldr_sum = 0
@@ -55,19 +56,36 @@ def train(name, dataset, accept_func, batch_size=10, num_epochs=1000, stop_file=
 
         if epoch % 10 == 0 or epoch == (num_epochs - 1):
             print("Saving to {}.params".format(epoch))
-            torch.save(sgvae.state_dict(), 'train/{}{}.params'.format(name, epoch))
-
-        with open(stop_file) as s:
-            if 'stop' in s.read(): return sgvae
+            torch.save(sgvae, 'train/{}{}.params'.format(name, epoch))
             
-    return sgvae
+    return sgvae, optimizer
 
+yescycles = 0
 def count_acceptable(sgvae, accept_func):
     acceptable = 0
-    for i in range(100):
+    for i in trange(100):
         g = sgvae.generate()
-        if accept_func(g): acceptable += 1
+        if accept_func(g): 
+            acceptable += 1
+            global yescycles
+            #save(g, 'yescycles/{}.png'.format(yescycles))
+            
+            yescycles+=1
+        else: 
+            pass
+            #save(g, 'notcycles/{}.png'.format(notcycles))
+            #outputfile.write('{}.png IS NOT A CYCLE\n-----------\n'.format(notcycles))
+            #outputfile.flush()
     return acceptable / 100
+
+notcycles = 0
+def save(g, path):
+    global notcycles
+    notcycles+=1
+    nx.draw(g.to_networkx())
+    plt.savefig(path)
+    plt.clf()
+    plt.close()
 
 def evaluate(sgvae, accept_func, x1, x2, feature_func):
     destructor = sgvae.encoder
